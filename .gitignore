@@ -1,0 +1,15 @@
+.Rproj.user/
+original_data/
+cleaned_data/
+notes/
+figures/
+meetings/
+.Rhistory
+*.docx
+*.jpg
+*.png
+*.tiff
+*.tif
+*.xlsx
+*.jpeg
+*.pptx
