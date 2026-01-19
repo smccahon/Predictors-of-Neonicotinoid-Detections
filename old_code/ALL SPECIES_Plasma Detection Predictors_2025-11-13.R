@@ -185,27 +185,33 @@ kruskal.test(PercentAg ~ NearestCropDistance_m, data = birds)
 
 m1 <- glmmTMB(PlasmaDetection ~ (1|Event/Site), 
               data = birds.cs, 
-              family = binomial(link = "logit"))
+              family = binomial(link = "logit"),
+              REML = TRUE)
 
 m2 <- glmmTMB(PlasmaDetection ~ (1|Event), 
               data = birds.cs,
-              family = binomial(link = "logit"))
+              family = binomial(link = "logit"),
+              REML = TRUE)
 
-m3 <- glmmTMB(PlasmaDetection ~ PercentAg + (1|Site),
+m3 <- glmmTMB(PlasmaDetection ~ (1|Site),
               data = birds.cs,
-              family = binomial(link = "logit"))
+              family = binomial(link = "logit"),
+              REML = TRUE)
 
 m4 <- glmmTMB(PlasmaDetection ~ 1,
               data = birds.cs,
-              family = binomial(link = "logit"))
+              family = binomial(link = "logit"),
+              REML = TRUE)
 
 m5 <- glmmTMB(PlasmaDetection ~ (1|Event) + (1|Event:Site), 
               data = birds.cs,
-              family = binomial(link = "logit"))
+              family = binomial(link = "logit"),
+              REML = TRUE)
 
-m6 <- glmmTMB(PlasmaDetection ~ PercentAg + (1|Event:Site), 
+m6 <- glmmTMB(PlasmaDetection ~ (1|Event:Site), 
               data = birds.cs,
-              family = binomial(link = "logit"))
+              family = binomial(link = "logit"),
+              REML = TRUE)
 
 model_names <- paste0("m", 1:6)
 models <- mget(model_names)
