@@ -2,7 +2,7 @@
 # Predictors of Neonics in Plasma #
 #   Analysis by Shelby McCahon    #
 #      Created: 2026-01-13        #
-#     Modified: 2026-01-13        #
+#     Modified: 2026-01-20        #
 #---------------------------------#
 
 # load packages
@@ -16,23 +16,27 @@ library(dplyr)
 library(tidyr)
 
 # DETAILS OF ANALYSIS
-# STAGE I: Identify the best predictors within each hypothesis
+# STAGE I: Identify the best predictors within each hypothesis (< 2 delta AICc)
 # STAGE II: Identify which hypotheses are supported
-# STAGE III: Identify combined effects across hypotheses if multiple hypotheses
-#            are supported
-
+# STAGE III: Model average the top 95% confidence set
 
 # ANALYSIS NOTES: 
-# I included sampling event in all models due to VERY strong temporal effect
-# Event became informed null
+# I included sampling event in all models due to VERY strong temporal effect.
+# Event became informed null.
 # I considered including site as a random effect but it created model
-# convergence issues and singular fit warnings
-# All models had VIF < 3
+# convergence issues and singular fit warnings (~0 variation).
+# I used "Migratory Status" rather than "Species" because it had a much stronger
+# effect according to AICc (AICc wt = 0.99).
+# I used Sampling Event rather than Season + Year because it had much stronger
+# support (AICc wt = 1.00).
+# I log-transformed nearest cropland distance to
+# account for heavy right-skew in the data. There was stronger support for
+# log-transformation of cropland distance. I did the same for wetland distance
+# but model without log-transformation had stronger support so I did not
+# include the transformation. 
+# There is no correlation in any of the ag variables.
 
-# UNRESOLVED:
-# Should distance to nearest wetland be included? If not, model averaging not
-# needed because wetland dynamics model not informative. I'm getting opposite 
-# result so I'm not sure what to do. Let's wait to see what we learn from
+# All models had VIF < 3
 
 #------------------------------------------------------------------------------#
 #                        load data and organize datasets                    ----                        
@@ -53,12 +57,30 @@ options(tibble.print_max = Inf)
 #                              manipulate data                              ----                        
 #------------------------------------------------------------------------------# 
 
+# convert factors to binary for correlation testing
+# birds <- birds %>%
+#   mutate(Season = ifelse(Season == "Spring", 1, 0)) %>% 
+#   mutate(MigStatus = ifelse(MigStatus == "Migrant", 1, 0)) %>% 
+#   mutate(Sex = ifelse(Sex == "F", 1, 0))
+# 
+# birds$Year <- as.factor(birds$Year)
+
 # combine temporary and seasonal permanence classes
 birds <- birds %>% 
   mutate(Permanence = case_when(
     Permanence %in% c("Temporary", "Seasonal") ~ "Temporary/Seasonal",
     Permanence == "Semipermanent" ~ "Semipermanent",
     Permanence == "Permanent" ~ "Permanent"))
+
+# log transform nearest crop distance due to skew
+birds <- birds %>% 
+  mutate(CropDistance = NearestCropDistance_m + 0.0001) %>% 
+  mutate(LogCropDistance = log(CropDistance))
+
+# log transform nearest wetland distance due to skew
+birds <- birds %>% 
+  mutate(WetlandDistance = Dist_Closest_Wetland_m + 0.0001) %>% 
+  mutate(LogWetlandDistance = log(WetlandDistance))
 
 # convert characters to factors
 birds <- birds %>% 
@@ -68,47 +90,45 @@ birds <- birds %>%
 birds <- birds %>% 
   mutate_if(is.integer, as.numeric)
 
-# filter data (n = 167)
+# filter data (n = 171)
 birds <- birds %>%
   filter(!is.na(PlasmaDetection)) %>% 
-  filter(!is.na(Sex)) %>% 
-  group_by(Species) %>% 
-  filter(n() >= 3)
+  filter(!is.na(Sex))
 
 #------------------------------------------------------------------------------#
 #                         identify correlations                             ----                        
 #------------------------------------------------------------------------------# 
 
-cor_mat <- cor(birds[sapply(birds, is.numeric)], 
-               use = "pairwise.complete.obs")
-
-# Convert matrix to a data frame of pairs
-cor_df <- as.data.frame(as.table(cor_mat))
-
-# Rename columns
-names(cor_df) <- c("Var1", "Var2", "Correlation")
-
-# Convert factors to characters
-cor_df$Var1 <- as.character(cor_df$Var1)
-cor_df$Var2 <- as.character(cor_df$Var2)
-
-# Keep only unique pairs (upper triangle)
-cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
-
-# Filter by threshold
-high_corr <- subset(cor_df, abs(Correlation) > 0.6)
-
-# Sort by correlation strength
-high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
-
-high_corr
+# cor_mat <- cor(birds[sapply(birds, is.numeric)], 
+#                use = "pairwise.complete.obs")
+# 
+# # Convert matrix to a data frame of pairs
+# cor_df <- as.data.frame(as.table(cor_mat))
+# 
+# # Rename columns
+# names(cor_df) <- c("Var1", "Var2", "Correlation")
+# 
+# # Convert factors to characters
+# cor_df$Var1 <- as.character(cor_df$Var1)
+# cor_df$Var2 <- as.character(cor_df$Var2)
+# 
+# # Keep only unique pairs (upper triangle)
+# cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
+# 
+# # Filter by threshold
+# high_corr <- subset(cor_df, abs(Correlation) > 0.6)
+# 
+# # Sort by correlation strength
+# high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
+# 
+# high_corr
 
 # relevant correlations
 
 #                               Var1                      Var2 Correlation
-# 623 DaysSinceLastPrecipitation_5mm PrecipitationAmount_7days  -0.7599430
-# 347                         Julian                      SPEI  -0.6599927
-# 233 DaysSinceLastPrecipitation_5mm                    Julian   0.6191898
+# 10                          Julian                    Season  -0.9593386
+# 436                         Season                      SPEI   0.7964145
+# 445                         Julian                      SPEI  -0.6736094
 
 #------------------------------------------------------------------------------#
 #                             standardize data                              ----                        
@@ -130,29 +150,25 @@ birds.cs$Permanence <- relevel(birds.cs$Permanence,
 #------------------------------------------------------------------------------# 
 
 # should I have site as a random effect? no
-# even when species is removed, model without random effect has higher
-# explanatory power, although it is close. most models in hypotheses have
-# singular fit warnings or model convergence issues, so its best to remove
-# site as a random effect
+# model without site as a random effect has higher explanatory power (AICc wt = 0.77)
+# including site also caused singular fit model warnings
 
-# m1 <- glmmTMB(PlasmaDetection ~ AnnualSnowfall_in + 
-#                DaysSinceLastPrecipitation_5mm + PrecipitationAmount_7days +
-#                Event + PercentAg + DominantCrop + NearestCropDistance_m + 
-#                Permanence + Percent_Exposed_Shoreline + SPEI + 
-#                seconds_since_midnight + Sex,
-#              family = "binomial",
-#              data = birds.cs,
-#              REML = TRUE)
-# 
-# # model not stable when species is included
-# m2 <- glmmTMB(PlasmaDetection ~ AnnualSnowfall_in + 
-#                 DaysSinceLastPrecipitation_5mm + PrecipitationAmount_7days +
-#                 Event + PercentAg + DominantCrop + NearestCropDistance_m + 
-#                 Permanence + Percent_Exposed_Shoreline + SPEI + 
-#                 seconds_since_midnight + Sex + (1|Site),
+# m1 <- glmmTMB(PlasmaDetection ~ Event + PercentAg + DominantCrop + 
+#               NearestCropDistance_m + Dist_Closest_Wetland_m +
+#               Permanence + SPEI + 
+#               time_hours + Sex + MigStatus,
 #               family = "binomial",
 #               data = birds.cs,
 #               REML = TRUE)
+#  
+# 
+# m2 <- glmmTMB(PlasmaDetection ~ Event + PercentAg + DominantCrop + 
+#                NearestCropDistance_m + Dist_Closest_Wetland_m +
+#                Permanence + SPEI + 
+#                time_hours + Sex + MigStatus + (1|Site),
+#                family = "binomial",
+#                data = birds.cs,
+#                REML = TRUE)
 # 
 # model_names <- paste0("m", 1:2)
 # models <- mget(model_names)
@@ -163,49 +179,51 @@ birds.cs$Permanence <- relevel(birds.cs$Permanence,
 #------------------------------------------------------------------------------# 
 
 # include all variables that show up in models with support (delta AICc < 2)
+# log-transforming crop distance improved model fit
 
 # best agricultural model
-global.model <- glm(PlasmaDetection ~ PercentAg + DominantCrop +
-                      NearestCropDistance_m + Event,
+global.model <- glm(PlasmaDetection ~ LogCropDistance + Event + PercentAg +
+                      DominantCrop,
                     family = "binomial",
                     data = birds.cs,
                     na.action = na.fail)
 
+
 # check for collinearity
-car::vif(global.model) # vif < 2
+car::vif(global.model) # vif < 4
 
 dredge(global.model)
 
 # Model selection table 
-#      (Int) DmC Evn   NCD_m      PrA df   logLik  AICc delta weight
-# 7  -0.7958       + -0.7010           5  -75.391 161.2  0.00  0.343
-# 8   0.4163   +   + -0.5870           8  -72.489 161.9  0.73  0.237
-# 15 -0.7267       + -0.7231 -0.10480  6  -75.319 163.2  2.01  0.126
-# 4   0.2897   +   +                   7  -74.557 163.8  2.66  0.090
-# 16  0.4298   +   + -0.5896 -0.01346  9  -72.488 164.1  2.97  0.078
-# 3  -0.8109       +                   4  -78.152 164.6  3.40  0.063
-# 12  0.1144   +   +          0.24890  8  -74.325 165.6  4.41  0.038
-# 11 -0.8652       +          0.12790  5  -77.992 166.4  5.20  0.025
-# 10 -0.5307   +              0.61620  5  -92.411 195.2 34.04  0.000
-# 14 -0.5196   +     -0.2249  0.46670  6  -91.903 196.3 35.18  0.000
-# 6  -0.1257   +     -0.3888           5  -93.113 196.6 35.45  0.000
-# 2   0.1335   +                       4  -95.283 198.8 37.66  0.000
-# 1  -0.6046                           1 -108.460 218.9 57.79  0.000
-# 5  -0.6085         -0.1564           2 -108.065 220.2 59.05  0.000
-# 13 -0.6148         -0.3021 -0.26880  3 -107.177 220.5 59.35  0.000
-# 9  -0.6060                 -0.10400  2 -108.263 220.6 59.44  0.000
+# (Intrc) DmnnC Event   LgCrD    PrcnA df   logLik  AICc delta weight
+# 7  -0.5162           + -0.5918           5  -75.327 161.0  0.00  0.520
+# 15 -0.3873           + -0.7086 -0.24750  6  -74.878 162.3  1.25  0.278
+# 8   0.3153     +     + -0.8985           8  -74.020 164.9  3.91  0.073
+# 4  -0.7119     +     +                   7  -75.761 166.2  5.19  0.039
+# 3  -0.8109           +                   4  -79.036 166.3  5.30  0.037
+# 16  0.5825     +     + -0.9227  0.17870  9  -73.941 167.0  5.98  0.026
+# 11 -0.8355           +          0.09026  5  -78.951 168.3  7.25  0.014
+# 12 -0.5834     +     +          0.08506  8  -75.743 168.4  7.36  0.013
+# 14  1.4560     +       -0.9379  0.60220  6  -91.038 194.6 33.57  0.000
+# 6   0.7804     +       -0.9091           5  -93.142 196.6 35.63  0.000
+# 10  0.9559     +                0.56870  5  -95.877 202.1 41.10  0.000
+# 2   0.3302     +                         4  -97.967 204.2 43.16  0.000
+# 13 -0.6270             -0.5668 -0.48390  3 -105.662 217.5 56.45  0.000
+# 5  -0.6001             -0.3385           2 -109.070 222.2 61.19  0.000
+# 1  -0.5896                               1 -111.408 224.8 63.82  0.000
+# 9  -0.5954                     -0.20840  2 -110.553 225.2 64.16  0.000
 # Models ranked by AICc(x) 
 
-# can remove % ag
-m1 <- glm(PlasmaDetection ~ DominantCrop + NearestCropDistance_m + Event,
+# remove dominant crop
+m1 <- glm(PlasmaDetection ~ LogCropDistance + Event + PercentAg,
           family = "binomial",
           data = birds.cs)
 
 summary(m1)
 confint(m1)
 
-# model validation --> no severe issues
-simulationOutput <- simulateResiduals(fittedModel = m1) 
+# model validation --> no issues
+simulationOutput <- simulateResiduals(fittedModel = m1, n = 1000) 
 plot(simulationOutput)
 testDispersion(m1) 
 testUniformity(simulationOutput)
@@ -213,93 +231,62 @@ testOutliers(simulationOutput)
 testQuantiles(simulationOutput) 
 
 plotResiduals(simulationOutput, form = model.frame(m1)$DominantCrop) #  good
-plotResiduals(simulationOutput, form = model.frame(m1)$NearestCropDistance_m) # some pattern
+plotResiduals(simulationOutput, form = model.frame(m1)$LogCropDistance) # good
 plotResiduals(simulationOutput, form = model.frame(m1)$Event)  # good
+plotResiduals(simulationOutput, form = model.frame(m1)$PercentAg)  # good
 
 #------------------------------------------------------------------------------#
 
-# best precipitation model
-# days since last precipitation event & precipitation amount are correlated
-# which to use?
-
-# this has a slightly higher AIC score (wt = 0.58)
-# m1 <- glm(PlasmaDetection ~ DaysSinceLastPrecipitation_5mm +
-#             AnnualSnowfall_in + AnnualPrecipitation_in + Event,
-#           family = "binomial",
-#           data = birds.cs,
-#           na.action = na.fail)
-# 
-# m2 <- glm(PlasmaDetection ~ PrecipitationAmount_7days +
-#             AnnualSnowfall_in + AnnualPrecipitation_in + Event,
-#           family = "binomial",
-#           data = birds.cs,
-#           na.action = na.fail)
-
-# AIC model selection
-# model_names <- paste0("m", 1:2)
-# models <- mget(model_names)
-# aictab(models, modnames = model_names)
-
-global.model <- glm(PlasmaDetection ~ DaysSinceLastPrecipitation_5mm +
-           AnnualSnowfall_in + 
-             AnnualPrecipitation_in + Event,
-         family = "binomial",
-         data = birds.cs,
-         na.action = na.fail)
+# best wetland dynamics model
+# model without log-transformation is better
+global.model <- glm(PlasmaDetection ~ Event + Dist_Closest_Wetland_m +
+                      Permanence,
+                    family = "binomial",
+                    data = birds.cs,
+                    na.action = na.fail)
 
 car::vif(global.model) # vif < 2
 
 dredge(global.model)
-# 
+
 # Model selection table 
-#      (Int) AnP_in   AnS_in DSL_5mm Evn df   logLik  AICc delta weight
-# 13 -0.7588                  0.3740   +  5  -76.856 164.1  0.00  0.190
-# 10 -0.4871 0.3679                    +  5  -77.013 164.4  0.31  0.163
-# 9  -0.8109                           +  4  -78.152 164.6  0.47  0.151
-# 15 -0.2550         0.37590  0.3605   +  6  -76.084 164.7  0.61  0.140
-# 11 -0.2362         0.42960           +  5  -77.216 164.8  0.72  0.133
-# 14 -0.5577 0.2422           0.2878   +  6  -76.421 165.4  1.28  0.100
-# 12 -0.2128 0.2715  0.26850           +  6  -76.731 166.0  1.90  0.073
-# 16 -0.2459 0.1096  0.31510  0.3220   +  7  -76.017 166.7  2.65  0.050
-# 8  -0.7067 1.1180 -0.69200 -0.5428      4  -95.065 198.4 34.29  0.000
-# 4  -0.6889 0.9464 -0.70110              3  -98.663 203.5 39.39  0.000
-# 6  -0.6759 0.7157          -0.5631      3  -99.727 205.6 41.52  0.000
-# 2  -0.6386 0.5169                       2 -103.765 211.6 47.52  0.000
-# 5  -0.6170                 -0.2945      2 -106.965 218.0 53.92  0.000
-# 1  -0.6046                              1 -108.460 218.9 54.86  0.000
-# 7  -0.6180        -0.09226 -0.2781      3 -106.821 219.8 55.70  0.000
-# 3  -0.6071        -0.13720              2 -108.118 220.3 56.22  0.000
+#     (Int) Dst_Cls_Wtl_m Evn Prm df   logLik  AICc delta weight
+# 4 -0.7169       0.62340   +      5  -75.328 161.0  0.00  0.555
+# 8 -2.1330       1.01700   +   +  7  -73.510 161.7  0.69  0.394
+# 3 -0.8109                 +      4  -79.036 166.3  5.29  0.039
+# 7 -0.1073                 +   +  6  -78.119 168.7  7.73  0.012
+# 5  0.3254                     +  3 -106.308 218.8 57.74  0.000
+# 6  0.2934       0.07419       +  4 -106.210 220.7 59.64  0.000
+# 1 -0.5896                        1 -111.408 224.8 63.82  0.000
+# 2 -0.5940       0.18020          2 -110.766 225.6 64.58  0.000
 # Models ranked by AICc(x) 
 
-# retain all predictors
-m2 <- glm(PlasmaDetection ~ DaysSinceLastPrecipitation_5mm + AnnualSnowfall_in + 
-            AnnualPrecipitation_in + Event,
-          family = "binomial",
-          data = birds.cs)
+# keep all predictors
+m2 <- glm(PlasmaDetection ~ Permanence + Event + Dist_Closest_Wetland_m,
+                    family = "binomial",
+                    data = birds.cs)
 
-summary(m2)
-confint(m2)
+car::vif(m2)
 
-# model validation --> no issues
-simulationOutput <- simulateResiduals(fittedModel = m2) 
+# model validation --> no severe issues
+simulationOutput <- simulateResiduals(fittedModel = m2, n =1000) 
 plot(simulationOutput)
 testDispersion(m2) 
 testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m2)$PrecipitationAmout_7days) #  good
-plotResiduals(simulationOutput, form = model.frame(m2)$AnnualSnowfall_in) # good
+plotResiduals(simulationOutput, form = model.frame(m2)$Permanence) #  good
 plotResiduals(simulationOutput, form = model.frame(m2)$Event)  # good
-plotResiduals(simulationOutput, form = model.frame(m2)$AnnualPrecipitation_in)  # good
+plotResiduals(simulationOutput, form = model.frame(m2)$Dist_Closest_Wetland_m)  # good
 
 #------------------------------------------------------------------------------#
 
-# best wetland dynamics model
-global.model <- glm(PlasmaDetection ~ Permanence +
-                      Event + Dist_Closest_Wetland_m,
-                    family = "binomial",
+# best temporal model
+# Julian was considered but had high VIF (4.46) and high correlation
+global.model <- glm(PlasmaDetection ~ Event + time_hours,
                     data = birds.cs,
+                    family = "binomial",
                     na.action = na.fail)
 
 car::vif(global.model) # vif < 2
@@ -307,73 +294,42 @@ car::vif(global.model) # vif < 2
 dredge(global.model)
 
 # Model selection table 
-#      (Int) Dst_Cls_Wtl_m Evn Prc_Exp_Shr Prm df   logLik  AICc delta weight
-# 4  -0.7393       0.58570   +                  5  -74.436 159.2  0.00  0.441
-# 12 -0.8345       0.87550   +               +  7  -72.793 160.3  1.04  0.261
-# 8  -0.7389       0.59300   +   -0.056660      6  -74.401 161.3  2.08  0.155
-# 16 -0.8407       0.86630   +   -0.035730   +  8  -72.783 162.5  3.23  0.088
-# 3  -0.8109                 +                  4  -78.152 164.6  5.31  0.031
-# 7  -0.8109                 +   -0.001477      5  -78.152 166.7  7.43  0.011
-# 11 -0.9119                 +               +  6  -77.201 166.9  7.68  0.009
-# 15 -0.9411                 +   -0.162000   +  7  -76.982 168.7  9.42  0.004
-# 9  -0.5596                                 +  3 -104.443 215.0 55.79  0.000
-# 10 -0.5547       0.09329                   +  4 -104.303 216.9 57.61  0.000
-# 13 -0.5989                     -0.094060   +  4 -104.305 216.9 57.61  0.000
-# 14 -0.6025       0.11580       -0.116600   +  5 -104.099 218.6 59.33  0.000
-# 1  -0.6046                                    1 -108.460 218.9 59.70  0.000
-# 2  -0.6109       0.21980                      2 -107.575 219.2 59.98  0.000
-# 6  -0.6141       0.24870       -0.152700      3 -107.165 220.5 61.23  0.000
-# 5  -0.6061                     -0.106900      2 -108.250 220.6 61.33  0.000
+#     (Int) Evn scn_snc_mdn df   logLik  AICc delta weight
+# 2 -0.8109   +              4  -79.036 166.3  0.00  0.645
+# 4 -0.8386   +     -0.1953  5  -78.572 167.5  1.19  0.355
+# 1 -0.5896                  1 -111.408 224.8 58.53  0.000
+# 3 -0.5954          0.2016  2 -110.623 225.3 59.00  0.000
 # Models ranked by AICc(x) 
 
-m3 <- glm(PlasmaDetection ~ Permanence + Event + Dist_Closest_Wetland_m,
-                    family = "binomial",
-                    data = birds.cs)
+# keep both predictors
+m3 <- glm(PlasmaDetection ~ Event + time_hours,
+          family = "binomial",
+          data = birds.cs)
 
-car::vif(m3)
-
-# model validation --> no severe issues
-simulationOutput <- simulateResiduals(fittedModel = m3) 
+# model validation --> no issues
+simulationOutput <- simulateResiduals(fittedModel = m3, n = 1000) 
 plot(simulationOutput)
 testDispersion(m3) 
 testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m3)$Permanence) #  good
+plotResiduals(simulationOutput, form = model.frame(m3)$time_hours) #  good
 plotResiduals(simulationOutput, form = model.frame(m3)$Event)  # good
-plotResiduals(simulationOutput, form = model.frame(m3)$Dist_Closest_Wetland_m)  # some pattern
+plotResiduals(simulationOutput, form = model.frame(m3)$Julian)  # good
 
 #------------------------------------------------------------------------------#
 
-# best temporal model
-global.model <- glm(PlasmaDetection ~ Event + Julian +
-                    seconds_since_midnight,
-                    data = birds.cs,
-                    family = "binomial",
-                    na.action = na.fail)
-
-car::vif(global.model) # vif < 2
-
-dredge(global.model)
-
-# Model selection table 
-#     (Int) Evn      Jln scn_snc_mdn df   logLik  AICc delta weight
-# 2 -0.8109   +                       4  -78.152 164.6  0.00  0.404
-# 6 -0.9191   +             -0.27580  5  -77.295 165.0  0.41  0.329
-# 4 -0.8039   + -0.08583              5  -78.117 166.6  2.06  0.144
-# 8 -0.9134   + -0.13980    -0.28720  6  -77.207 166.9  2.39  0.122
-# 3 -0.6982     -0.91650              2  -95.647 195.4 30.82  0.000
-# 7 -0.7013     -0.92840    -0.05596  3  -95.604 197.4 32.80  0.000
-# 1 -0.6046                           1 -108.460 218.9 54.39  0.000
-# 5 -0.6059                  0.09691  2 -108.291 220.7 56.10  0.000
-# Models ranked by AICc(x) 
-
-# can drop Julian
-
-m4 <- glm(PlasmaDetection ~ Event + seconds_since_midnight,
+# drought model
+m4 <- glm(PlasmaDetection ~ SPEI + Event,
+          data = birds.cs,
           family = "binomial",
-          data = birds.cs)
+          na.action = na.fail)
+
+car::vif(m4) # vif < 3
+
+summary(m4)
+confint(m4)
 
 # model validation --> no issues
 simulationOutput <- simulateResiduals(fittedModel = m4) 
@@ -383,21 +339,41 @@ testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m4)$seconds_since_midnight) #  good
 plotResiduals(simulationOutput, form = model.frame(m4)$Event)  # good
-plotResiduals(simulationOutput, form = model.frame(m4)$Julian)  # good
+plotResiduals(simulationOutput, form = model.frame(m4)$SPEI)  # good
 
 #------------------------------------------------------------------------------#
 
-# drought model
-m5 <- glm(PlasmaDetection ~ SPEI + Event,
+# life history model
+global.model <- glm(PlasmaDetection ~ Sex + MigStatus + Event,
           data = birds.cs,
-          family = "binomial")
+          family = "binomial",
+          na.action = na.fail)
 
-car::vif(m5) # vif < 2
+car::vif(global.model) # vif < 2
+
+dredge(global.model)
+
+# Model selection table 
+#   (Intrc) Event MgStt Sex df   logLik  AICc delta weight
+# 2 -0.8109     +            4  -79.036 166.3  0.00  0.350
+# 6 -0.5332     +         +  5  -77.978 166.3  0.01  0.349
+# 4 -0.8891     +     +      5  -78.795 168.0  1.64  0.154
+# 8 -0.6081     +     +   +  6  -77.766 168.0  1.73  0.147
+# 7 -0.4319           +   +  3 -105.934 218.0 51.70  0.000
+# 3 -0.8550           +      2 -108.144 220.4 54.05  0.000
+# 5 -0.1452               +  2 -108.538 221.1 54.83  0.000
+# 1 -0.5896                  1 -111.408 224.8 58.53  0.000
+# Models ranked by AICc(x) 
 
 summary(m5)
-confint(m5)
+confint(m5) 
+
+# keep all predictors
+m5 <- glm(PlasmaDetection ~ Sex + MigStatus + Event,
+                    data = birds.cs,
+                    family = "binomial",
+                    na.action = na.fail)
 
 # model validation --> no issues
 simulationOutput <- simulateResiduals(fittedModel = m5) 
@@ -407,13 +383,14 @@ testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m5)$SPEI) #  good
+plotResiduals(simulationOutput, form = model.frame(m5)$MigStatus) #  good
 plotResiduals(simulationOutput, form = model.frame(m5)$Event)  # good
+plotResiduals(simulationOutput, form = model.frame(m5)$Sex)  # good
 
 #------------------------------------------------------------------------------#
 
-# life history model
-m6 <- glm(PlasmaDetection ~ Sex + Species + Event,
+# best pesticide detection model
+m6 <- glm(PlasmaDetection ~ EnvDetection + Event,
           data = birds.cs,
           family = "binomial")
 
@@ -421,7 +398,6 @@ car::vif(m6) # vif < 2
 
 summary(m6)
 confint(m6) 
-# LBDO estimates are unstable because all were captured in spring 2023
 
 # model validation --> no issues
 simulationOutput <- simulateResiduals(fittedModel = m6) 
@@ -431,39 +407,39 @@ testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m6)$Species) #  good
+plotResiduals(simulationOutput, form = model.frame(m6)$EnvDetection) #  good
 plotResiduals(simulationOutput, form = model.frame(m6)$Event)  # good
-plotResiduals(simulationOutput, form = model.frame(m6)$Sex)  # good
-
-#------------------------------------------------------------------------------#
-
-# best pesticide detection model
-m7 <- glm(PlasmaDetection ~ EnvDetection + Event,
-          data = birds.cs,
-          family = "binomial")
-
-car::vif(m7) # vif < 2
-
-summary(m7)
-confint(m7) 
-
-# model validation --> no issues
-simulationOutput <- simulateResiduals(fittedModel = m7) 
-plot(simulationOutput)
-testDispersion(m5) 
-testUniformity(simulationOutput)
-testOutliers(simulationOutput) 
-testQuantiles(simulationOutput) 
-
-plotResiduals(simulationOutput, form = model.frame(m7)$EnvDetection) #  good
-plotResiduals(simulationOutput, form = model.frame(m7)$Event)  # good
 
 #------------------------------------------------------------------------------#
 
 # informed null
-m8 <- glm(PlasmaDetection ~ Event,
+m7 <- glm(PlasmaDetection ~ Event,
           data = birds.cs,
           family = "binomial")
+
+#------------------------------------------------------------------------------#
+
+# precipitation?
+global.model <- glm(PlasmaDetection ~ DaysSinceLastPrecipitation_5mm + 
+                      PrecipitationAmount_7days + AnnualSnowfall_in +
+                      AnnualPrecipitation_in + Event,
+                    data = birds.cs,
+                    family = "binomial",
+                    na.action = na.fail)
+
+car::vif(global.model) # vif < 2
+
+dredge(global.model)
+
+# retain all
+
+m8 <- glm(PlasmaDetection ~ DaysSinceLastPrecipitation_5mm + 
+                      PrecipitationAmount_7days + AnnualSnowfall_in +
+                      AnnualPrecipitation_in + Event,
+                    data = birds.cs,
+                    family = "binomial",
+                    na.action = na.fail)
+
 
 #------------------------------------------------------------------------------#
 
@@ -476,53 +452,49 @@ aictab(models, modnames = model_names)
 
 # Model selection based on AICc:
 #   
-#     K   AICc Delta_AICc AICcWt Cum.Wt     LL
-# m3  7 160.29       0.00   0.56   0.56 -72.79 ** wetland dynamics
-# m1  8 161.89       1.60   0.25   0.81 -72.49 ** agriculture
-# m8  4 164.55       4.26   0.07   0.87 -78.15 ** informed null
-# m4  5 164.96       4.67   0.05   0.93 -77.29 ** temporal
-# m5  5 166.42       6.13   0.03   0.95 -78.02
-# m7  5 166.67       6.38   0.02   0.98 -78.15
-# m2  7 166.74       6.45   0.02   1.00 -76.02
-# m6 13 174.29      14.00   0.00   1.00 -72.95
+#    K   AICc Delta_AICc AICcWt Cum.Wt     LL
+# m2 7 161.71       0.00   0.49   0.49 -73.51
+# m1 6 162.27       0.56   0.37   0.87 -74.88
+# m7 4 166.31       4.61   0.05   0.92 -79.04
+# m3 5 167.51       5.80   0.03   0.94 -78.57
+# m5 6 168.04       6.34   0.02   0.97 -77.77
+# m6 5 168.42       6.71   0.02   0.98 -79.03
+# m4 5 168.43       6.72   0.02   1.00 -79.03
 
 #------------------------------------------------------------------------------#
 
 # STAGE III: model average
-model_avg <- model.avg(m1, m4, m3, m8)
+model_avg <- model.avg(m1, m2, m3, m7, m8)
 
 summary(model_avg)
 confint(model_avg)
 
+
 # Model-averaged coefficients:  
 #   (full average) 
-#                         Estimate Std. Error Adjusted SE z value Pr(>|z|)   
-# (Intercept)             -1.25028    1.18075     1.18610   1.054  0.29183   
-# PermanencePermanent      0.60298    0.88712     0.89181   0.676  0.49895   
-# PermanenceSemipermanent  0.89370    1.01821     1.02201   0.874  0.38187   
-# EventFall 2023          -0.88832    0.61405     0.61866   1.436  0.15104   
-# EventSpring 2022         4.70095    1.48725     1.49637   3.142  0.00168 **
-# EventSpring 2023        -0.50820    0.74461     0.74953   0.678  0.49775   
-# Dist_Closest_Wetland_m   0.52587    0.49044     0.49132   1.070  0.28448   
-# DominantCropCanola       0.14729    0.46870     0.47134   0.312  0.75467   
-# DominantCropSoybean     -0.16298    0.44126     0.44340   0.368  0.71319   
-# DominantCropWheat       -0.31293    0.62099     0.62249   0.503  0.61516   
-# NearestCropDistance_m   -0.15850    0.31235     0.31308   0.506  0.61268   
-# seconds_since_midnight  -0.01601    0.08264     0.08289   0.193  0.84679  
-  
-#                              2.5 %    97.5 %
-# (Intercept)             -3.5750031 1.0744401
-# PermanencePermanent     -0.8776680 2.8855475
-# PermanenceSemipermanent -0.3240878 3.3000422
-# EventFall 2023          -2.1008839 0.3242355
-# EventSpring 2022         1.7681076 7.6337895
-# EventSpring 2023        -1.9772582 0.9608492
-# Dist_Closest_Wetland_m   0.2690524 1.4820445
-# DominantCropCanola      -0.9797089 2.0707654
-# DominantCropSoybean     -1.9360813 0.7287588
-# DominantCropWheat       -2.4803879 0.1622846
-# NearestCropDistance_m   -1.2413917 0.0673040
-# seconds_since_midnight  -0.6991770 0.1476504
+#                          Estimate Std. Error Adjusted SE z value Pr(>|z|)   
+# (Intercept)             -1.336180   1.197225    1.201722   1.112  0.26619   
+# PermanencePermanent      0.719052   1.014281    1.018378   0.706  0.48014   
+# PermanenceSemipermanent  0.899308   1.106704    1.109993   0.810  0.41783   
+# EventFall 2023          -0.885278   0.653444    0.657592   1.346  0.17822   
+# EventSpring 2022         4.854519   1.679124    1.687329   2.877  0.00401 **
+# EventSpring 2023        -0.903842   0.751638    0.756321   1.195  0.23207   
+# Dist_Closest_Wetland_m   0.532546   0.566288    0.567111   0.939  0.34770   
+# LogCropDistance         -0.280216   0.384098    0.384629   0.729  0.46629   
+# PercentAg               -0.097865   0.202756    0.203722   0.480  0.63095   
+# time_hours              -0.005622   0.047696    0.047882   0.117  0.90653 
+
+#                              2.5 %     97.5 %
+# (Intercept)             -3.6915111  1.0191509
+# PermanencePermanent     -0.6651340  3.4124209
+# PermanenceSemipermanent -0.1895411  3.6255313
+# EventFall 2023          -2.1741350  0.4035795
+# EventSpring 2022         1.5474149  8.1616228
+# EventSpring 2023        -2.3862027  0.5785197
+# Dist_Closest_Wetland_m   0.3350684  1.6996345
+# LogCropDistance         -1.2291730 -0.1880566
+# PercentAg               -0.7582946  0.2633313
+# time_hours              -0.5997960  0.2092773
 
 
 
@@ -547,17 +519,16 @@ df <- data.frame(
 # remove intercept
 df <- subset(df, term != "(Intercept)")
 
-# order factors from highest to lowest
- # df$term <- factor(
- #   df$term,
- #   levels = df$term[order(df$estimate)]
- # )
+ # order factors from highest to lowest
+  # df$term <- factor(
+  #  df$term,
+  #   levels = df$term[order(df$estimate)]
+  # )
 
 # add reference levels to plot
 ref_levels <- data.frame(
   term = c("Sampling Event (Fall 2021)", 
-           "Wetland Permanence (Temporary/Seasonal)",
-           "Dominant Land Use (Grassland)"), 
+           "Wetland Permanence (Temporary/Seasonal)"),
   estimate = 0,
   conf_low = 0,
   conf_high = 0
@@ -576,14 +547,9 @@ df$term <- factor(
              "PermanencePermanent",
              "Wetland Permanence (Temporary/Seasonal)",
              "Dist_Closest_Wetland_m",
-             "DaysSinceLastPrecipitation_5mm",
-             "AnnualSnowfall_in",
-             "AnnualPrecipitation_in",
-             "DominantCropCanola",
-             "DominantCropSoybean",
-             "DominantCropWheat",
-             "Dominant Land Use (Grassland)",
-             "NearestCropDistance_m")),
+             "time_hours",
+             "PercentAg",
+             "LogCropDistance")),
   labels = rev(c("Sampling Event (Spring 2022)",
              "Sampling Event (Spring 2023)",
              "Sampling Event (Fall 2023)",
@@ -591,15 +557,10 @@ df$term <- factor(
              "Wetland Permanence (Semi-permanent)",
              "Wetland Permanence (Permanent)",
              "Wetland Permanence (Temporary/Seasonal)",
-              "Nearest Wetland Distance",
-             "# Days Since Precipitation Event",
-             "Annual Snowfall",
-             "Annual Precipitation",
-             "Dominant Land Use (Canola)",
-             "Dominant Land Use (Soybean)",
-             "Dominant Land Use (Wheat)",
-             "Dominant Land Use (Grassland)",
-             "Nearest Crop Distance")))
+             "Distance to Nearest Wetland",
+             "Capture Time",
+             "% Surrounding Cropland Cover",
+             "Log(Distance to Nearest Crop)")))
 
 # graph results
 ggplot(df, aes(x = estimate, y = term)) +
@@ -616,8 +577,26 @@ ggplot(df, aes(x = estimate, y = term)) +
     x = "Standardized Parameter Estimate",
     y = "")
   
+ggsave(filename = "Model-averaged Plasma Neonic Results_2026-01-20.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
 
+#------------------------------------------------------------------------------#
 
+# interpreting results
+# what's so interesting about isolated wetlands?
 
+# not related to surrounding cropland
+ggplot(birds,
+       aes(x = Dist_Closest_Wetland_m,
+           y = PercentAg)) + geom_point() + my_theme
+
+ggplot(birds,
+       aes(x = Event,
+           y = Dist_Closest_Wetland_m)) + geom_boxplot() + my_theme
+
+ggplot(birds,
+       aes(x = PlasmaDetection,
+           y = Dist_Closest_Wetland_m)) + geom_boxplot() + my_theme
 
 

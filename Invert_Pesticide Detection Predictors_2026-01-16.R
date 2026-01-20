@@ -2,7 +2,7 @@
 #  Predictors of Neonics in Inverts #
 #     Analysis by Shelby McCahon    #
 #        Created: 2026-01-16        #
-#       Modified: 2026-01-16        #
+#       Modified: 2026-01-20        #
 #-----------------------------------#
 
 # load packages
@@ -39,8 +39,11 @@ options(tibble.print_max = Inf)
 #                              manipulate data                              ----                        
 #------------------------------------------------------------------------------# 
 
-invert <- invert %>%
-  mutate(Buffered = ifelse(Buffered == "Y", 1, 0))
+# invert <- invert %>%
+#   mutate(Buffered = ifelse(Buffered == "Y", 1, 0))
+# 
+# invert <- invert %>%
+#   mutate(Season = ifelse(Season == "Spring", 1, 0))
 
 # convert characters to factors
 invert <- invert %>% 
@@ -52,13 +55,23 @@ invert <- invert %>%
 
 # log transform nearest crop distance due to skew
 invert <- invert %>% 
-  mutate(CropDistance = NearestCropDistance_m + 0.0001) %>% 
-  mutate(CropDistance = log(CropDistance))
+  mutate(LogCropDistance = NearestCropDistance_m + 0.0001) %>% 
+  mutate(LogCropDistance = log(LogCropDistance))
+
+# log transform nearest wetland distance due to skew
+invert <- invert %>% 
+  mutate(LogWetlandDistance = Dist_Closest_Wetland_m + 0.0001) %>% 
+  mutate(LogWetlandDistance = log(LogWetlandDistance))
 
 # log transform precipitation amount due to skew
 invert <- invert %>% 
-  mutate(Precip = PrecipitationAmount_7days + 0.0001) %>% 
-  mutate(Precip = log(Precip))
+  mutate(LogPrecipAmount = PrecipitationAmount_7days + 0.0001) %>% 
+  mutate(LogPrecipAmount = log(LogPrecipAmount))
+
+# log transform precipitation events due to skew
+invert <- invert %>% 
+  mutate(LogPrecipDays = DaysSinceLastPrecipitation_5mm + 0.0001) %>% 
+  mutate(LogPrecipDays = log(LogPrecipDays))
 
 # standardize data
 invert.cs <- invert %>%
@@ -75,31 +88,32 @@ invert.cs$Permanence <- relevel(invert.cs$Permanence,
 #                         identify correlations                             ----                        
 #------------------------------------------------------------------------------# 
 # 
- cor_mat <- cor(invert[sapply(invert, is.numeric)], 
-                use = "pairwise.complete.obs")
-# 
- # Convert matrix to a data frame of pairs
- cor_df <- as.data.frame(as.table(cor_mat))
- 
- # Rename columns
- names(cor_df) <- c("Var1", "Var2", "Correlation")
- 
- # Convert factors to characters
- cor_df$Var1 <- as.character(cor_df$Var1)
- cor_df$Var2 <- as.character(cor_df$Var2)
- 
- # Keep only unique pairs (upper triangle)
- cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
- 
- # Filter by threshold
- high_corr <- subset(cor_df, abs(Correlation) > 0.6)
- 
- # Sort by correlation strength
- high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
- 
- high_corr
+#  cor_mat <- cor(invert[sapply(invert, is.numeric)], 
+#                 use = "pairwise.complete.obs")
+# # 
+#  # Convert matrix to a data frame of pairs
+#  cor_df <- as.data.frame(as.table(cor_mat))
+#  
+#  # Rename columns
+#  names(cor_df) <- c("Var1", "Var2", "Correlation")
+#  
+#  # Convert factors to characters
+#  cor_df$Var1 <- as.character(cor_df$Var1)
+#  cor_df$Var2 <- as.character(cor_df$Var2)
+#  
+#  # Keep only unique pairs (upper triangle)
+#  cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
+#  
+#  # Filter by threshold
+#  high_corr <- subset(cor_df, abs(Correlation) > 0.6)
+#  
+#  # Sort by correlation strength
+#  high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
+#  
+#  high_corr
 
  #                               Var1                      Var2 Correlation
+#    8                         Julian                    Season  -0.9387924
  # 156                       Buffered                 PercentAg  -0.7439067
  # 151          NearestCropDistance_m                 PercentAg  -0.7261301
  # 72                        Buffered     NearestCropDistance_m   0.6990801
@@ -107,30 +121,56 @@ invert.cs$Permanence <- relevel(invert.cs$Permanence,
 
 #------------------------------------------------------------------------------#
 #                   identify best model for each hypothesis                 ----                        
-#------------------------------------------------------------------------------# 
+#------------------------------------------------------------------------------#
 
-# crop distance has the best fit (AICc wt. = 0.57)
-# m1 <- glm(InvertPesticideDetection ~ PercentAg + DominantCrop,
-#                   family = "binomial",
-#                   data = invert.cs,
-#                   na.action = na.fail)
-#  
-# m2 <- glm(InvertPesticideDetection ~ Buffered + DominantCrop,
-#          family = "binomial",
-#          data = invert.cs,
-#          na.action = na.fail)
+# log-transformation? YES (although similar wt. = 0.55) and no effect
+# m1 <- glm(InvertPesticideDetection ~ LogCropDistance,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
 # 
-# m3 <- glm(InvertPesticideDetection ~ CropDistance + DominantCrop,
-#          family = "binomial",
-#          data = invert.cs,
-#          na.action = na.fail)
-#  
-# model_names <- paste0("m", 1:3)
+# m2 <- glm(InvertPesticideDetection ~ NearestCropDistance_m,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
+# 
+# model_names <- paste0("m", 1:2)
 # models <- mget(model_names)
 # aictab(models, modnames = model_names)
 
+### identify best predictor of the correlated ag variables
 
-global.model <- glm(InvertPesticideDetection ~ CropDistance + DominantCrop,
+# crop distance has the best fit with (wt = 0.44) or without dominant crop (wt = 0.57)
+#  m1 <- glm(InvertPesticideDetection ~ PercentAg + DominantCrop,
+#                    family = "binomial",
+#                    data = invert.cs,
+#                    na.action = na.fail)
+#   
+#  m2 <- glm(InvertPesticideDetection ~ Buffered + DominantCrop,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
+#  
+#  m3 <- glm(InvertPesticideDetection ~ LogCropDistance + DominantCrop,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
+#   
+# model_names <- paste0("m", 1:3)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
+ 
+# including all correlated variables
+# dominant crop can be removed but buffer presence & percent ag stay...
+global.model <- glm(InvertPesticideDetection ~ LogCropDistance + DominantCrop +
+                    Buffered + PercentAg,
+                    family = "binomial",
+                    data = invert.cs,
+                    na.action = na.fail)
+
+# removing correlated variables
+# dominant crop can be removed
+global.model <- glm(InvertPesticideDetection ~ LogCropDistance + DominantCrop,
                 family = "binomial",
                 data = invert.cs,
                 na.action = na.fail)
@@ -140,25 +180,24 @@ car::vif(global.model) # vif < 2
 
 dredge(global.model)
 
-# Model selection table 
-#    (Intrc)  CrpDs DmnnC df  logLik AICc delta weight
-# 1 -0.1967               1 -35.105 72.3  0.00  0.585
-# 2 -0.2067 0.3249        2 -34.533 73.3  1.02  0.351
-# 3 -0.2231            +  5 -33.330 78.0  5.70  0.034
-# 4 -0.5269 0.5829     +  6 -32.149 78.2  5.92  0.030
-# Models ranked by AICc(x) 
-
-# can remove dominant crop
-m1 <- glm(InvertPesticideDetection ~ CropDistance,
+# removing correlated variables
+m1 <- glm(InvertPesticideDetection ~ LogCropDistance,
           family = "binomial",
           data = invert.cs,
           na.action = na.fail)
+
+# including correlated variables
+m1 <- glm(InvertPesticideDetection ~ LogCropDistance + Buffered + PercentAg,
+          family = "binomial",
+          data = invert.cs,
+          na.action = na.fail)
+
 
 summary(m1)
 confint(m1)
 
 # model validation --> good
-simulationOutput <- simulateResiduals(fittedModel = m1) 
+simulationOutput <- simulateResiduals(fittedModel = m1, n = 1000) 
 plot(simulationOutput)
 testDispersion(m1) 
 testUniformity(simulationOutput)
@@ -170,8 +209,24 @@ plotResiduals(simulationOutput, form = model.frame(m1)$CropDistance) # good
 #------------------------------------------------------------------------------#
 
 # best wetland dynamics model
+# log-transformation? YES (although similar wt. = 0.55)
+#  m1 <- glm(InvertPesticideDetection ~ LogWetlandDistance,
+#            family = "binomial",
+#            data = invert.cs,
+#            na.action = na.fail)
+# #
+#  m2 <- glm(InvertPesticideDetection ~ Dist_Closest_Wetland_m,
+#            family = "binomial",
+#            data = invert.cs,
+#            na.action = na.fail)
+#  
+#  model_names <- paste0("m", 1:2)
+#  models <- mget(model_names)
+#  aictab(models, modnames = model_names)
+
+
 global.model <- glm(InvertPesticideDetection ~ Permanence + 
-                      Dist_Closest_Wetland_m,
+                      LogWetlandDistance,
                     family = "binomial",
                     na.action = na.fail,
                     data = invert.cs)
@@ -182,15 +237,15 @@ car::vif(global.model) # vif < 2
 dredge(global.model)
 
 # Model selection table 
-#     (Int) Dst_Cls_Wtl_m Prm df  logLik AICc delta weight
-# 3 -1.6090                 +  4 -31.563 72.0  0.00  0.402
-# 1 -0.1967                    1 -35.105 72.3  0.30  0.347
-# 2 -0.1977      -0.12230      2 -35.015 74.3  2.28  0.128
-# 4 -1.6450      -0.09826   +  5 -31.514 74.4  2.37  0.123
+#   (Intrc)  LgWtD Prmnn df  logLik AICc delta weight
+# 3 -1.6090            +  4 -31.563 72.0  0.00  0.357
+# 1 -0.1967               1 -35.105 72.3  0.30  0.308
+# 4 -1.5330 0.3447     +  5 -30.940 73.2  1.22  0.194
+# 2 -0.1992 0.2241        2 -34.799 73.8  1.85  0.141
 # Models ranked by AICc(x) 
 
-# distance to closest wetland can be removed
-m2 <- glm(InvertPesticideDetection ~ Permanence,
+# keep both
+m2 <- glm(InvertPesticideDetection ~ Permanence + LogWetlandDistance,
           data = invert.cs,
           family = "binomial",
           na.action = na.fail)
@@ -198,8 +253,8 @@ m2 <- glm(InvertPesticideDetection ~ Permanence,
 summary(m2)
 confint(m2)
 
-# model validation --> good
-simulationOutput <- simulateResiduals(fittedModel = m2) 
+# model validation --> some issues in the residuals but log transformation helped
+simulationOutput <- simulateResiduals(fittedModel = m2, n = 1000) 
 plot(simulationOutput)
 testDispersion(m2) 
 testUniformity(simulationOutput)
@@ -207,38 +262,89 @@ testOutliers(simulationOutput)
 testQuantiles(simulationOutput) 
 
 plotResiduals(simulationOutput, form = model.frame(m2)$Permanence) #  good
+plotResiduals(simulationOutput, form = model.frame(m2)$LogWetlandDistance) #  some pattern
 
 #------------------------------------------------------------------------------#
+# best precipitation model
 
-# precipitation amount performed better than days since event (AICc wt = 0.81)
-#  m1 <- glm(InvertPesticideDetection ~ Precip,
-#            family = "binomial",
-#            data = invert.cs,
-#            na.action = na.fail) 
-#  
-#  m2 <- glm(InvertPesticideDetection ~ DaysSinceLastPrecipitation_5mm,
-#            family = "binomial",
-#            data = invert.cs,
-#            na.action = na.fail)
+# log-transformation? no 
+# m1 <- glm(InvertPesticideDetection ~ LogPrecipAmount,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
 # 
-#  model_names <- paste0("m", 1:2)
-#  models <- mget(model_names)
-#  aictab(models, modnames = model_names)
+# m2 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
 # 
-# # best precipitation model
-# global.model <- glm(InvertPesticideDetection ~ AnnualSnowfall_in + 
-#                       AnnualPrecipitation_in + PrecipitationAmount_7days,
-#                     family = "binomial",
-#                     na.action = na.fail,
-#                     data = invert.cs)
+# model_names <- paste0("m", 1:2)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
+  
+# log-transformation? YES
+# m1 <- glm(InvertPesticideDetection ~ LogPrecipDays,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
+# 
+# m2 <- glm(InvertPesticideDetection ~ DaysSinceLastPrecipitation_5mm,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
+# 
+# model_names <- paste0("m", 1:2)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
 
-m3 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
+#### taking into consideration of correlations
+
+# precipitation amount performed better than days since event (AICc wt = 0.80)
+# m1 <- glm(InvertPesticideDetection ~ LogPrecipDays,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail) 
+# 
+# m2 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
+#           family = "binomial",
+#           data = invert.cs,
+#           na.action = na.fail)
+# 
+# model_names <- paste0("m", 1:2)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
+ 
+
+# including all correlated variables
+ global.model <- glm(InvertPesticideDetection ~ AnnualSnowfall_in + 
+                       AnnualPrecipitation_in + PrecipitationAmount_7days +
+                       LogPrecipDays,
+                     family = "binomial",
+                     na.action = na.fail,
+                     data = invert.cs)
+ 
+# removing correlated variables
+# retain all variables...
+ global.model <- glm(InvertPesticideDetection ~ AnnualSnowfall_in + 
+                       AnnualPrecipitation_in + PrecipitationAmount_7days,
+                     family = "binomial",
+                     na.action = na.fail,
+                     data = invert.cs)
+ 
+# check for collinearity
+car::vif(global.model) # vif < 2
+
+dredge(global.model)
+
+# considering correlations
+# retain all variables...
+m3 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days +
+            AnnualSnowfall_in + 
+            AnnualPrecipitation_in + LogPrecipDays,
           family = "binomial",
           na.action = na.fail,
           data = invert.cs)
 
-summary(m3)
-confint(m3)
 
 # model validation --> no severe issues
 simulationOutput <- simulateResiduals(fittedModel = m3) 
@@ -251,22 +357,6 @@ testQuantiles(simulationOutput)
 plotResiduals(simulationOutput, form = model.frame(m3)$AnnualSnowfall_in) # good
 plotResiduals(simulationOutput, form = model.frame(m3)$PrecipitationAmount_7days) # pattern
 plotResiduals(simulationOutput, form = model.frame(m3)$AnnualPrecipitation_in) # good
-
-# is log-transformation better? no
-# m1 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
-#           family = "binomial",
-#           na.action = na.fail,
-#           data = invert.cs)
-# 
-# m2 <- glm(InvertPesticideDetection ~ Precip,
-#           family = "binomial",
-#           na.action = na.fail,
-#           data = invert.cs)
-# 
-# 
-#   model_names <- paste0("m", 1:2)
-#   models <- mget(model_names)
-#   aictab(models, modnames = model_names)
 
 #------------------------------------------------------------------------------#
 
@@ -304,6 +394,27 @@ model_names <- paste0("m", 1:5)
 models <- mget(model_names)
 aictab(models, modnames = model_names)
 
+# NOT CONSIDERING CORRELATIONS
+# Model selection based on AICc:
+#   
+#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# m3 5 69.48       0.00   0.65   0.65 -29.07
+# m5 1 72.29       2.81   0.16   0.81 -35.11
+# m2 5 73.21       3.73   0.10   0.91 -30.94
+# m4 2 74.33       4.85   0.06   0.97 -35.04
+# m1 4 75.51       6.03   0.03   1.00 -33.32
+
+# CONSIDERING CORRELATIONS
+# Model selection based on AICc:
+#   
+#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# m3 5 69.48       0.00   0.61   0.61 -29.07
+# m5 1 72.29       2.81   0.15   0.76 -35.11
+# m2 5 73.21       3.73   0.09   0.86 -30.94
+# m1 2 73.32       3.83   0.09   0.95 -34.53
+# m4 2 74.33       4.85   0.05   1.00 -35.04
+
+
 # Model selection based on AICc:
 #   
 #    K  AICc Delta_AICc AICcWt Cum.Wt     LL
@@ -313,8 +424,6 @@ aictab(models, modnames = model_names)
 # m1 2 73.32       7.79   0.02   0.99 -34.53
 # m4 2 74.33       8.80   0.01   1.00 -35.04
 
-
-
 ggplot(invert,
        aes(x = InvertPesticideDetection,
            y = PrecipitationAmount_7days)) + geom_boxplot() + my_theme
@@ -322,7 +431,7 @@ ggplot(invert,
 #------------------------------------------------------------------------------#
 
 # STAGE III: model average
-model_avg <- model.avg(m3, m2)
+model_avg <- model.avg(m3, m2, m5)
 
 summary(model_avg)
 confint(model_avg)
@@ -423,8 +532,6 @@ ggplot(df, aes(x = estimate, y = term)) +
 
 
 # plot relationships
-ggplot(invert, aes(y = PrecipitationAmount_7days,
+ggplot(invert, aes(y = LogPrecipAmount,
                   x = InvertPesticideDetection)) +
-  geom_boxplot() + geom_point()
-
-cor(invert$NearestCropDistance_m, invert$PercentAg) # -0.73
+  geom_point()

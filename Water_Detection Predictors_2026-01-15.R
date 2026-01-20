@@ -2,7 +2,7 @@
 #  Predictors of Neonics in Water #
 #   Analysis by Shelby McCahon    #
 #      Created: 2026-01-15        #
-#     Modified: 2026-01-16        #
+#     Modified: 2026-01-20        #
 #---------------------------------#
 
 # load packages
@@ -20,6 +20,9 @@ library(AICcmodavg)
 # Analysis notes
 # seasonal wetlands all had detections, so I combined it with temporary wetlands
 # event highly influential so I included it in all models and used it as informed null
+# results do not change depending on if I include correlated agricultural 
+# variables together or not. log(cropland distance) is still the only informative
+# metric (no other variables are within 2 delta AIC)
 
 #------------------------------------------------------------------------------#
 #                        load data and organize datasets                    ----                        
@@ -39,6 +42,14 @@ options(tibble.print_max = Inf)
 #------------------------------------------------------------------------------#
 #                              manipulate data                              ----                        
 #------------------------------------------------------------------------------# 
+
+# convert factors to binary for correlation testing
+ # water <- water %>%
+ #   mutate(Season = ifelse(Season == "Spring", 1, 0)) %>% 
+ #   mutate(Buffered = ifelse(Buffered == "Y", 1, 0))
+ # 
+ # water$Year <- as.factor(water$Year)
+
 # combine temporary and seasonal permanence classes
 water <- water %>% 
   mutate(Permanence = case_when(
@@ -54,6 +65,25 @@ water <- water %>%
 water <- water %>%
   filter(!is.na(WaterNeonicDetection))
 
+# log transform nearest crop distance due to skew
+water <- water %>% 
+  mutate(LogCropDistance = NearestCropDistance_m + 0.0001) %>% 
+  mutate(LogCropDistance = log(LogCropDistance))
+
+# log transform precipitation amount due to skew
+water <- water %>% 
+  mutate(LogPrecipitationAmount_7days = PrecipitationAmount_7days + 0.0001) %>% 
+  mutate(LogPrecipAmount = log(LogPrecipitationAmount_7days))
+
+# log transform nearest crop distance due to skew
+water <- water %>% 
+  mutate(LogDaysSinceLastPrecipitation_5mm = DaysSinceLastPrecipitation_5mm + 0.0001) %>% 
+  mutate(LogPrecipDays = log(LogDaysSinceLastPrecipitation_5mm))
+
+# log transform nearest crop distance due to skew
+water <- water %>% 
+   mutate(LogWetlandDistance = log(Dist_Closest_Wetland_m))
+
 # standardize data
 water.cs <- water %>%
   mutate(across(where(is.numeric), scale))
@@ -66,84 +96,183 @@ water.cs$Permanence <- relevel(water.cs$Permanence,
                                ref = "Temporary/Seasonal")
 
 #------------------------------------------------------------------------------#
+#                         identify correlations                             ----                        
+#------------------------------------------------------------------------------# 
+
+ # cor_mat <- cor(water[sapply(water, is.numeric)], 
+ #                use = "pairwise.complete.obs")
+ # 
+ # # Convert matrix to a data frame of pairs
+ # cor_df <- as.data.frame(as.table(cor_mat))
+ # 
+ # # Rename columns
+ # names(cor_df) <- c("Var1", "Var2", "Correlation")
+ # 
+ # # Convert factors to characters
+ # cor_df$Var1 <- as.character(cor_df$Var1)
+ # cor_df$Var2 <- as.character(cor_df$Var2)
+ # 
+ # # Keep only unique pairs (upper triangle)
+ # cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
+ # 
+ # # Filter by threshold
+ # high_corr <- subset(cor_df, abs(Correlation) > 0.6)
+ # 
+ # # Sort by correlation strength
+ # high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
+ # 
+ # high_corr
+
+# relevant correlations
+ #                      Var1                  Var2 Correlation
+ # 21                 Julian                Season  -0.9736649
+ # 82                 Season                  SPEI   0.8311283
+ # 81                 Julian                  SPEI  -0.7553440
+ # 66               Buffered NearestCropDistance_m   0.7409913
+ # 46               Buffered             PercentAg  -0.7367155
+ # 44  NearestCropDistance_m             PercentAg  -0.7150703
+ 
+#------------------------------------------------------------------------------#
 #                   identify best model for each hypothesis                 ----                        
 #------------------------------------------------------------------------------# 
 
 # include all variables that show up in models with support (delta AICc < 2)
 
-# best agricultural model
-global.model <- glm(WaterNeonicDetection ~ PercentAg + DominantCrop +
-                      NearestCropDistance_m + Buffered + Event,
+# log-transformation? YES
+# m1 <- glm(WaterNeonicDetection ~ LogCropDistance + Event,
+#           family = "binomial",
+#           data = water.cs,
+#           na.action = na.fail)
+# 
+# m2 <- glm(WaterNeonicDetection ~ NearestCropDistance_m + Event,
+#           family = "binomial",
+#           data = water.cs,
+#           na.action = na.fail)
+# 
+# model_names <- paste0("m", 1:2)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
+
+# which ag variable should I use? answer: nearest crop distance
+# m1 <- glm(WaterNeonicDetection ~ PercentAg + DominantCrop + Event,
+#                      family = "binomial",
+#                      data = water.cs,
+#                      na.action = na.fail)
+# 
+# m2 <- glm(WaterNeonicDetection ~ Buffered + DominantCrop + Event,
+#             family = "binomial",
+#             data = water.cs,
+#             na.action = na.fail)
+#   
+# # best model if considering correlations
+# m3 <- glm(WaterNeonicDetection ~ LogCropDistance + DominantCrop + Event,
+#             family = "binomial",
+#             data = water.cs,
+#             na.action = na.fail)
+
+# model_names <- paste0("m", 1:3)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
+
+
+# best agricultural model (considering correlations)
+# global.model <- glm(WaterNeonicDetection ~ DominantCrop +
+#                       LogCropDistance + Event,
+#                     family = "binomial",
+#                     data = water.cs,
+#                     na.action = na.fail)
+
+# considering all variables (even correlated ones)
+global.model <- glm(WaterNeonicDetection ~ LogCropDistance + Event + 
+                      PercentAg + Buffered + DominantCrop,
                     family = "binomial",
                     data = water.cs,
                     na.action = na.fail)
 
 # check for collinearity
-car::vif(global.model) # vif < 4
+car::vif(global.model) # vif < 3
 
 dredge(global.model)
 
 # Model selection table 
-#       (Int) Bff DmC Evn    NCD_m     PrA df  logLik  AICc delta weight
-# 30 -0.19340   +       +  2.12000 0.97510  7 -35.248  85.8  0.00  0.439
-# 29 -0.80140           +  0.98180 1.21700  6 -37.177  87.3  1.53  0.204
-# 14  0.01437   +       +  1.69800          6 -37.607  88.1  2.39  0.133
-# 21 -0.78440           +          0.49630  5 -39.601  89.9  4.11  0.056
-# 5  -0.69310           +                   4 -41.112  90.7  4.90  0.038
-# 16 -0.06119   +   +   +  2.26500         10 -34.255  91.1  5.31  0.031
-# 6  -0.61710   +       +                   5 -40.498  91.7  5.90  0.023
-# 22 -0.80410   +       +          0.53500  6 -39.591  92.1  6.36  0.018
-# 32 -0.16120   +   +   +  2.36800 0.61750 11 -33.680  92.5  6.71  0.015
-# 13 -0.68740           +  0.06482          5 -41.085  92.8  7.07  0.013
-# 31 -0.87890       +   +  1.05100 0.90680 10 -35.551  93.7  7.90  0.008
-# 7  -0.85090       +   +                   8 -38.051  93.7  7.98  0.008
-# 15 -0.89210       +   +  0.51900          9 -36.874  93.8  8.06  0.008
-# 23 -0.84710       +   +          0.08525  9 -38.028  96.1 10.37  0.002
-# 8  -0.86120   +   +   +                   9 -38.048  96.2 10.41  0.002
-# 24 -0.88620   +   +   +          0.15790 10 -37.998  98.6 12.80  0.001
-# 26 -0.59680   +          1.44400 0.73450  4 -48.093 104.6 18.86  0.000
-# 10 -0.34060   +          1.18400          3 -49.871 106.0 20.25  0.000
-# 25 -1.24200              0.70910 1.04900  3 -50.107 106.5 20.72  0.000
-# 17 -1.18700                      0.54900  2 -51.908 107.9 22.19  0.000
-# 2  -0.86750   +                           2 -52.412 109.0 23.20  0.000
-# 18 -1.06600   +                  0.41010  3 -51.749 109.8 24.00  0.000
-# 1  -1.11200                               1 -54.270 110.6 24.83  0.000
-# 12 -0.79060   +   +      1.31400          7 -48.339 111.9 26.18  0.000
-# 9  -1.11300             -0.05361          2 -54.246 112.6 26.86  0.000
-# 28 -0.74630   +   +      1.44300 0.57010  8 -47.620 112.9 27.12  0.000
-# 3  -1.60900       +                       5 -51.689 114.0 28.28  0.000
-# 27 -1.45700       +      0.67940 0.85780  7 -49.599 114.5 28.70  0.000
-# 4  -1.29900   +   +                       6 -51.206 115.3 29.59  0.000
-# 19 -1.42900       +              0.33940  6 -51.241 115.4 29.66  0.000
-# 11 -1.72800       +      0.23580          6 -51.337 115.6 29.85  0.000
-# 20 -1.29200   +   +              0.20800  7 -51.091 117.4 31.68  0.000
+#    (Intrc) Bffrd DmnnC Event   LgCrD    PrcnA df  logLik  AICc delta weight
+# 13 -0.3501                 + -0.6987           5 -37.449  85.6  0.00  0.459
+# 14 -0.3539     +           + -0.7872           6 -37.328  87.6  2.03  0.166
+# 29 -0.3326                 + -0.7223 -0.03984  6 -37.444  87.8  2.26  0.148
+# 21 -0.7844                 +          0.49630  5 -39.601  89.9  4.30  0.053
+# 30 -0.3945     +           + -0.7544  0.09225  7 -37.310  89.9  4.32  0.053
+# 5  -0.6931                 +                   4 -41.112  90.7  5.10  0.036
+# 6  -0.6171     +           +                   5 -40.498  91.7  6.10  0.022
+# 22 -0.8041     +           +          0.53500  6 -39.591  92.1  6.56  0.017
+# 9  -1.3230                   -1.0200           2 -44.347  92.8  7.26  0.012
+# 7  -0.8509           +     +                   8 -38.051  93.7  8.18  0.008
+# 15 -0.3503           +     + -0.6973           9 -37.215  94.5  8.94  0.005
+# 25 -1.3160                   -1.1090 -0.17630  3 -44.223  94.7  9.15  0.005
+# 10 -1.3740     +             -1.0570           3 -44.310  94.9  9.32  0.004
+# 23 -0.8471           +     +          0.08525  9 -38.028  96.1 10.57  0.002
+# 8  -0.8612     +     +     +                   9 -38.048  96.2 10.61  0.002
+# 16 -0.3558     +     +     + -0.7853          10 -37.097  96.8 11.20  0.002
+# 26 -1.3130     +             -1.1080 -0.18000  4 -44.223  96.9 11.32  0.002
+# 31 -0.3438           +     + -0.7072 -0.03120 10 -37.213  97.0 11.43  0.002
+# 11 -0.6509           +       -1.6300           6 -42.593  98.1 12.56  0.001
+# 24 -0.8862     +     +     +          0.15790 10 -37.998  98.6 13.00  0.001
+# 32 -0.3824     +     +     + -0.7734  0.11730 11 -37.070  99.2 13.69  0.000
+# 27 -0.6246           +       -1.6080  0.08891  7 -42.567 100.4 14.84  0.000
+# 12 -0.6324     +     +       -1.6190           7 -42.589 100.4 14.88  0.000
+# 28 -0.6314     +     +       -1.6110  0.09733  8 -42.567 102.8 17.21  0.000
+# 17 -1.1870                            0.54900  2 -51.908 107.9 22.39  0.000
+# 2  -0.8675     +                               2 -52.412 109.0 23.40  0.000
+# 18 -1.0660     +                      0.41010  3 -51.749 109.8 24.20  0.000
+# 1  -1.1120                                     1 -54.270 110.6 25.03  0.000
+# 3  -1.6090           +                         5 -51.689 114.0 28.48  0.000
+# 4  -1.2990     +     +                         6 -51.206 115.3 29.79  0.000
+# 19 -1.4290           +                0.33940  6 -51.241 115.4 29.86  0.000
+# 20 -1.2920     +     +                0.20800  7 -51.091 117.4 31.88  0.000
 # Models ranked by AICc(x) 
 
-# can remove dominant crop
-m1 <- glm(WaterNeonicDetection ~ PercentAg + NearestCropDistance_m + 
-            Buffered + Event,
+# can remove dominant crop and percent ag
+# ** correlated variables didn't end up in there anyways
+m1 <- glm(WaterNeonicDetection ~ LogCropDistance + Event,
           family = "binomial",
           data = water.cs)
+
+car::vif(m1) # vif < 2
 
 summary(m1)
 confint(m1)
 
-# model validation --> some pattern but n.s.
-simulationOutput <- simulateResiduals(fittedModel = m1) 
+# model validation --> good
+simulationOutput <- simulateResiduals(fittedModel = m1, n = 1000) 
 plot(simulationOutput)
 testDispersion(m1) 
 testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m1)$PercentAg) #  good
-plotResiduals(simulationOutput, form = model.frame(m1)$NearestCropDistance_m) # some pattern
-plotResiduals(simulationOutput, form = model.frame(m1)$Buffered)  # good
+plotResiduals(simulationOutput, form = model.frame(m1)$LogCropDistance) # good
 plotResiduals(simulationOutput, form = model.frame(m1)$Event) # good
 
 #------------------------------------------------------------------------------#
 
 # best wetland dynamics model
+
+# log-transformation? NO, although they perform similarily (wt = 0.46)
+# does it affect end results? NO (variable not a top predictor anyways)
+ # m1 <- glm(WaterNeonicDetection ~ LogWetlandDistance + Event,
+ #           family = "binomial",
+ #           data = water.cs,
+ #           na.action = na.fail)
+ # 
+ # m2 <- glm(WaterNeonicDetection ~ Dist_Closest_Wetland_m + Event,
+ #           family = "binomial",
+ #           data = water.cs,
+ #           na.action = na.fail)
+# 
+# model_names <- paste0("m", 1:2)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
+
+
 global.model <- glm(WaterNeonicDetection ~ Permanence + 
                       Dist_Closest_Wetland_m + Event,
                     family = "binomial",
@@ -173,11 +302,11 @@ m2 <- glm(WaterNeonicDetection ~ Permanence + Event,
           family = "binomial",
           na.action = na.fail)
 
-summary(m3)
-confint(m3)
+summary(m2)
+confint(m2)
 
-# model validation --> pattern but not significant
-simulationOutput <- simulateResiduals(fittedModel = m2) 
+# model validation --> good
+simulationOutput <- simulateResiduals(fittedModel = m2, n = 1000) 
 plot(simulationOutput)
 testDispersion(m2) 
 testUniformity(simulationOutput)
@@ -189,6 +318,36 @@ plotResiduals(simulationOutput, form = model.frame(m2)$Event) # good
 
 
 #------------------------------------------------------------------------------#
+
+# log-transformation? no
+ # m1 <- glm(WaterNeonicDetection ~ LogPrecipDays + Event,
+ #           family = "binomial",
+ #           data = water.cs,
+ #           na.action = na.fail)
+ # 
+ # m2 <- glm(WaterNeonicDetection ~ DaysSinceLastPrecipitation_5mm + Event,
+ #           family = "binomial",
+ #           data = water.cs,
+ #           na.action = na.fail)
+ # 
+ # model_names <- paste0("m", 1:2)
+ # models <- mget(model_names)
+ # aictab(models, modnames = model_names)
+ # 
+ # # log-transformation? no
+ # m1 <- glm(WaterNeonicDetection ~ LogPrecipAmount + Event,
+ #           family = "binomial",
+ #           data = water.cs,
+ #           na.action = na.fail)
+ # 
+ # m2 <- glm(WaterNeonicDetection ~ PrecipitationAmount_7days + Event,
+ #           family = "binomial",
+ #           data = water.cs,
+ #           na.action = na.fail)
+ # 
+ # model_names <- paste0("m", 1:2)
+ # models <- mget(model_names)
+ # aictab(models, modnames = model_names)
 
 # best precipitation model
 global.model <- glm(WaterNeonicDetection ~ AnnualSnowfall_in + 
@@ -251,7 +410,7 @@ summary(m3)
 confint(m3)
 
 # model validation --> good
-simulationOutput <- simulateResiduals(fittedModel = m3) 
+simulationOutput <- simulateResiduals(fittedModel = m3, n = 1000) 
 plot(simulationOutput)
 testDispersion(m3) 
 testUniformity(simulationOutput)
@@ -271,6 +430,8 @@ m4 <- glm(WaterNeonicDetection ~ SPEI + Event,
           data = water.cs,
           family = "binomial",
           na.action = na.fail)
+
+car::vif(m4)# vif < 3
 
 summary(m4)
 confint(m4)
@@ -319,11 +480,11 @@ aictab(models, modnames = model_names)
 # Model selection based on AICc:
 #   
 #    K  AICc Delta_AICc AICcWt Cum.Wt     LL
-# m1 7 85.76       0.00   0.75   0.75 -35.25 ** agriculture
-# m2 6 89.43       3.67   0.12   0.87 -38.25 ** wetland dynamics
-# m5 4 90.66       4.90   0.06   0.93 -41.11 ** informed null
-# m4 5 91.03       5.28   0.05   0.98 -40.19
-# m3 8 93.42       7.66   0.02   1.00 -37.89
+# m1 5 85.56       0.00   0.77   0.77 -37.45
+# m2 6 89.43       3.87   0.11   0.88 -38.25
+# m5 4 90.66       5.10   0.06   0.94 -41.11
+# m4 5 91.03       5.48   0.05   0.98 -40.19
+# m3 8 93.42       7.86   0.02   1.00 -37.89
 
 #------------------------------------------------------------------------------#
 
@@ -336,27 +497,22 @@ confint(model_avg)
 # Model-averaged coefficients:  
 #   (full average) 
 #                         Estimate Std. Error Adjusted SE z value Pr(>|z|)  
-# (Intercept)             -0.06133    0.97855     0.98884   0.062   0.9505  
-# PercentAg                0.78288    0.57832     0.58267   1.344   0.1791  
-# NearestCropDistance_m    1.70172    1.17990     1.18779   1.433   0.1520  
-# BufferedY               -3.34274    3.01470     3.04344   1.098   0.2721  
-# EventFall 2023          -3.30963    1.37320     1.39139   2.379   0.0174 *
-# EventSpring 2022         1.18100    1.26840     1.28094   0.922   0.3565  
-# EventSpring 2023         0.21751    1.00498     1.01501   0.214   0.8303  
-# PermanencePermanent     -0.27734    0.82045     0.82291   0.337   0.7361  
-# PermanenceSemipermanent -0.17899    0.57655     0.57923   0.309   0.7573  
+# (Intercept)              -0.1997     0.9173      0.9262   0.216   0.8293  
+# LogCropDistance          -0.5716     0.3646      0.3668   1.558   0.1192  
+# EventFall 2023           -3.1809     1.2770      1.2934   2.459   0.0139 *
+# EventSpring 2022          0.1767     1.1045      1.1181   0.158   0.8744  
+# EventSpring 2023         -0.4519     0.9428      0.9540   0.474   0.6358  
+# PermanencePermanent      -0.2559     0.7916      0.7940   0.322   0.7472  
+# PermanenceSemipermanent  -0.1652     0.5559      0.5585   0.296   0.7674  
 
-#                               2.5 %      97.5 %
-# (Intercept)             -1.99941429  1.87676140
-# PercentAg                0.02418989  1.92607568
-# NearestCropDistance_m    0.28982713  3.94937678
-# BufferedY               -9.74840583  1.42121911
-# EventFall 2023          -6.03670711 -0.58256270
-# EventSpring 2022        -1.32959000  3.69159964
-# EventSpring 2023        -1.77187785  2.20690714
-# PermanencePermanent     -4.31061211 -0.02372223
-# PermanenceSemipermanent -3.27432296  0.47704909
-
+#                             2.5 %      97.5 %
+# (Intercept)             -2.014970  1.61550948
+# LogCropDistance         -1.237916 -0.15949500
+# EventFall 2023          -5.715882 -0.64583465
+# EventSpring 2022        -2.014809  2.36821352
+# EventSpring 2023        -2.321638  1.41792776
+# PermanencePermanent     -4.310612 -0.02372223
+# PermanenceSemipermanent -3.274323  0.47704909
 
 
 #------------------------------------------------------------------------------#
@@ -381,16 +537,15 @@ df <- data.frame(
 df <- subset(df, term != "(Intercept)")
 
 # order factors from highest to lowest
- df$term <- factor(
-   df$term,
-   levels = df$term[order(df$estimate)]
- )
+  # df$term <- factor(
+  #   df$term,
+  #   levels = df$term[order(df$estimate)]
+  # )
 
 # add reference levels to plot
 ref_levels <- data.frame(
   term = c("Sampling Event (Fall 2021)", 
-           "Wetland Permanence (Temporary/Seasonal)",
-           "No Buffer Presence"), 
+           "Wetland Permanence (Temporary/Seasonal)"), 
   estimate = 0,
   conf_low = 0,
   conf_high = 0
@@ -401,25 +556,19 @@ df <- rbind(df, ref_levels)
 # relabel terms
 df$term <- factor(
   df$term,
-  levels = rev(c("NearestCropDistance_m",
-                 "PercentAg",
-                 "BufferedY",
-                 "No Buffer Presence",
-                 "EventSpring 2022",
+  levels = rev(c("EventSpring 2022",
                  "EventSpring 2023",
                  "EventFall 2023",
                  "Sampling Event (Fall 2021)",
+                 "LogCropDistance",
                  "PermanenceSemipermanent",
                  "PermanencePermanent",
                  "Wetland Permanence (Temporary/Seasonal)")),
-  labels = rev(c("Nearest Crop Distance",
-                 "% Surrounding Cropland Cover",
-                 "Buffer Presence",
-                 "No Buffer Presence",
-                 "Sampling Event (Spring 2022)",
+  labels = rev(c("Sampling Event (Spring 2022)",
                  "Sampling Event (Spring 2023)",
                  "Sampling Event (Fall 2023)",
                  "Sampling Event (Fall 2021)",
+                 "Log(Distance to Nearest Crop)",
                  "Wetland Permanence (Semi-permanent)",
                  "Wetland Permanence (Permanent)",
                  "Wetland Permanence (Temporary/Seasonal)")))
@@ -440,10 +589,7 @@ ggplot(df, aes(x = estimate, y = term)) +
     x = "Standardized Parameter Estimate",
     y = "")
 
+ggsave(filename = "Model-averaged Water Neonic Results_2026-01-20.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
 
-# plot relationships
-ggplot(water, aes(y = NearestCropDistance_m,
-                  x = WaterNeonicDetection)) +
-  geom_boxplot() + geom_point()
-
-cor(water$NearestCropDistance_m, water$PercentAg) # -0.72
