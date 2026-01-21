@@ -2,7 +2,7 @@
 #  Predictors of Neonics in Water #
 #   Analysis by Shelby McCahon    #
 #      Created: 2026-01-15        #
-#     Modified: 2026-01-20        #
+#     Modified: 2026-01-21        #
 #---------------------------------#
 
 # load packages
@@ -99,32 +99,32 @@ water.cs$Permanence <- relevel(water.cs$Permanence,
 #                         identify correlations                             ----                        
 #------------------------------------------------------------------------------# 
 
- # cor_mat <- cor(water[sapply(water, is.numeric)], 
- #                use = "pairwise.complete.obs")
- # 
- # # Convert matrix to a data frame of pairs
- # cor_df <- as.data.frame(as.table(cor_mat))
- # 
- # # Rename columns
- # names(cor_df) <- c("Var1", "Var2", "Correlation")
- # 
- # # Convert factors to characters
- # cor_df$Var1 <- as.character(cor_df$Var1)
- # cor_df$Var2 <- as.character(cor_df$Var2)
- # 
- # # Keep only unique pairs (upper triangle)
- # cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
- # 
- # # Filter by threshold
- # high_corr <- subset(cor_df, abs(Correlation) > 0.6)
- # 
- # # Sort by correlation strength
- # high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
- # 
- # high_corr
+# cor_mat <- cor(water[sapply(water, is.numeric)], 
+#                use = "pairwise.complete.obs")
+# 
+# # Convert matrix to a data frame of pairs
+# cor_df <- as.data.frame(as.table(cor_mat))
+# 
+# # Rename columns
+# names(cor_df) <- c("Var1", "Var2", "Correlation")
+# 
+# # Convert factors to characters
+# cor_df$Var1 <- as.character(cor_df$Var1)
+# cor_df$Var2 <- as.character(cor_df$Var2)
+# 
+# # Keep only unique pairs (upper triangle)
+# cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
+# 
+# # Filter by threshold
+# high_corr <- subset(cor_df, abs(Correlation) > 0.6)
+# 
+# # Sort by correlation strength
+# high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
+# 
+# high_corr
 
 # relevant correlations
- #                      Var1                  Var2 Correlation
+  #                      Var1                  Var2 Correlation
  # 21                 Julian                Season  -0.9736649
  # 82                 Season                  SPEI   0.8311283
  # 81                 Julian                  SPEI  -0.7553440
@@ -258,15 +258,15 @@ plotResiduals(simulationOutput, form = model.frame(m1)$Event) # good
 
 # log-transformation? NO, although they perform similarily (wt = 0.46)
 # does it affect end results? NO (variable not a top predictor anyways)
- # m1 <- glm(WaterNeonicDetection ~ LogWetlandDistance + Event,
- #           family = "binomial",
- #           data = water.cs,
- #           na.action = na.fail)
- # 
- # m2 <- glm(WaterNeonicDetection ~ Dist_Closest_Wetland_m + Event,
- #           family = "binomial",
- #           data = water.cs,
- #           na.action = na.fail)
+# m1 <- glm(WaterNeonicDetection ~ LogWetlandDistance + Event,
+#           family = "binomial",
+#           data = water.cs,
+#           na.action = na.fail)
+# 
+# m2 <- glm(WaterNeonicDetection ~ Dist_Closest_Wetland_m + Event,
+#           family = "binomial",
+#           data = water.cs,
+#           na.action = na.fail)
 # 
 # model_names <- paste0("m", 1:2)
 # models <- mget(model_names)
@@ -274,7 +274,7 @@ plotResiduals(simulationOutput, form = model.frame(m1)$Event) # good
 
 
 global.model <- glm(WaterNeonicDetection ~ Permanence + 
-                      Dist_Closest_Wetland_m + Event,
+                      Dist_Closest_Wetland_m + Event + Porosity,
                     family = "binomial",
                     na.action = na.fail,
                     data = water.cs)
@@ -285,19 +285,27 @@ car::vif(global.model) # vif < 2
 dredge(global.model)
 
 # Model selection table 
-#     (Int) Dst_Cls_Wtl_m Evn Prm df  logLik  AICc delta weight
-# 7  1.1090                 +   +  6 -38.247  89.4  0.00  0.467
-# 3 -0.6931                 +      4 -41.112  90.7  1.23  0.252
-# 8  1.0010       -0.1591   +   +  7 -38.101  91.5  2.03  0.169
-# 4 -0.7623       -0.2115   +      5 -40.835  92.3  2.90  0.109
-# 5 -0.3514                     +  3 -47.226 100.7 11.28  0.002
-# 6 -0.3663       -0.3415       +  4 -46.522 101.5 12.05  0.001
-# 1 -1.1120                        1 -54.270 110.6 21.15  0.000
-# 2 -1.1330       -0.2869          2 -53.724 111.6 22.15  0.000
+#     (Int) Dst_Cls_Wtl_m Evn Prm    Prs df  logLik  AICc delta weight
+# 7   1.1090                 +   +         6 -38.247  89.4  0.00  0.312
+# 3  -0.6931                 +             4 -41.112  90.7  1.23  0.169
+# 15  1.0380                 +   + 0.3073  7 -37.987  91.2  1.80  0.126
+# 8   1.0010       -0.1591   +   +         7 -38.101  91.5  2.03  0.113
+# 11 -0.7026                 +     0.4430  5 -40.402  91.5  2.04  0.113
+# 4  -0.7623       -0.2115   +             5 -40.835  92.3  2.90  0.073
+# 12 -0.7718       -0.1962   +     0.4339  6 -40.167  93.3  3.84  0.046
+# 16  0.9313       -0.1495   +   + 0.2989  8 -37.856  93.3  3.92  0.044
+# 13 -0.6453                     + 0.6399  4 -45.780 100.0 10.57  0.002
+# 14 -0.6832       -0.3636       + 0.6761  5 -44.945 100.5 11.12  0.001
+# 5  -0.3514                     +         3 -47.226 100.7 11.28  0.001
+# 6  -0.3663       -0.3415       +         4 -46.522 101.5 12.05  0.001
+# 9  -1.3040                       0.8988  2 -49.985 104.1 14.67  0.000
+# 10 -1.3350       -0.3728         0.9464  3 -49.043 104.3 14.92  0.000
+# 1  -1.1120                               1 -54.270 110.6 21.15  0.000
+# 2  -1.1330       -0.2869                 2 -53.724 111.6 22.15  0.000
 # Models ranked by AICc(x) 
 
 # distance to nearest wetland can be removed
-m2 <- glm(WaterNeonicDetection ~ Permanence + Event,
+m2 <- glm(WaterNeonicDetection ~ Permanence + Event + Porosity,
           data = water.cs,
           family = "binomial",
           na.action = na.fail)
@@ -315,6 +323,7 @@ testQuantiles(simulationOutput)
 
 plotResiduals(simulationOutput, form = model.frame(m2)$Permanence) #  good
 plotResiduals(simulationOutput, form = model.frame(m2)$Event) # good
+plotResiduals(simulationOutput, form = model.frame(m2)$Porosity) # pattern
 
 
 #------------------------------------------------------------------------------#
@@ -477,6 +486,7 @@ model_names <- paste0("m", 1:5)
 models <- mget(model_names)
 aictab(models, modnames = model_names)
 
+# not considering porosity
 # Model selection based on AICc:
 #   
 #    K  AICc Delta_AICc AICcWt Cum.Wt     LL
@@ -486,10 +496,21 @@ aictab(models, modnames = model_names)
 # m4 5 91.03       5.48   0.05   0.98 -40.19
 # m3 8 93.42       7.86   0.02   1.00 -37.89
 
+# when i consider porosity
+# Model selection based on AICc:
+#   
+#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# m1 5 85.56       0.00   0.82   0.82 -37.45
+# m5 4 90.66       5.10   0.06   0.88 -41.11
+# m4 5 91.03       5.48   0.05   0.94 -40.19
+# m2 7 91.23       5.68   0.05   0.98 -37.99
+# m3 8 93.42       7.86   0.02   1.00 -37.89
+
+
 #------------------------------------------------------------------------------#
 
 # STAGE III: model average
-model_avg <- model.avg(m1, m2, m5)
+model_avg <- model.avg(m1, m4, m5)
 
 summary(model_avg)
 confint(model_avg)
@@ -544,8 +565,7 @@ df <- subset(df, term != "(Intercept)")
 
 # add reference levels to plot
 ref_levels <- data.frame(
-  term = c("Sampling Event (Fall 2021)", 
-           "Wetland Permanence (Temporary/Seasonal)"), 
+  term = c("Sampling Event (Fall 2021)"), 
   estimate = 0,
   conf_low = 0,
   conf_high = 0
@@ -561,17 +581,13 @@ df$term <- factor(
                  "EventFall 2023",
                  "Sampling Event (Fall 2021)",
                  "LogCropDistance",
-                 "PermanenceSemipermanent",
-                 "PermanencePermanent",
-                 "Wetland Permanence (Temporary/Seasonal)")),
+                 "SPEI")),
   labels = rev(c("Sampling Event (Spring 2022)",
                  "Sampling Event (Spring 2023)",
                  "Sampling Event (Fall 2023)",
                  "Sampling Event (Fall 2021)",
                  "Log(Distance to Nearest Crop)",
-                 "Wetland Permanence (Semi-permanent)",
-                 "Wetland Permanence (Permanent)",
-                 "Wetland Permanence (Temporary/Seasonal)")))
+                 "Drought Index (SPEI)")))
 
 # graph results
 ggplot(df, aes(x = estimate, y = term)) +
@@ -593,3 +609,10 @@ ggsave(filename = "Model-averaged Water Neonic Results_2026-01-20.tiff",
        path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
        width = 13, height = 8, units = "in", device='tiff', dpi=300)
 
+
+
+
+
+
+
+ggplot(water, aes(x = Event, y = SPEI)) + geom_boxplot()

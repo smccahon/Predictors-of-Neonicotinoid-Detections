@@ -14,6 +14,7 @@ library(AICcmodavg)
 library(lattice)
 library(dplyr)
 library(tidyr)
+library(lme4)
 
 # DETAILS OF ANALYSIS
 # STAGE I: Identify the best predictors within each hypothesis (< 2 delta AICc)
@@ -58,10 +59,10 @@ options(tibble.print_max = Inf)
 #------------------------------------------------------------------------------# 
 
 # convert factors to binary for correlation testing
-# birds <- birds %>%
-#   mutate(Season = ifelse(Season == "Spring", 1, 0)) %>% 
-#   mutate(MigStatus = ifelse(MigStatus == "Migrant", 1, 0)) %>% 
-#   mutate(Sex = ifelse(Sex == "F", 1, 0))
+ birds <- birds %>%
+   mutate(Season = ifelse(Season == "Spring", 1, 0)) %>% 
+   mutate(MigStatus = ifelse(MigStatus == "Migrant", 1, 0)) %>% 
+   mutate(Sex = ifelse(Sex == "F", 1, 0))
 # 
 # birds$Year <- as.factor(birds$Year)
 
@@ -99,36 +100,37 @@ birds <- birds %>%
 #                         identify correlations                             ----                        
 #------------------------------------------------------------------------------# 
 
-# cor_mat <- cor(birds[sapply(birds, is.numeric)], 
-#                use = "pairwise.complete.obs")
-# 
-# # Convert matrix to a data frame of pairs
-# cor_df <- as.data.frame(as.table(cor_mat))
-# 
-# # Rename columns
-# names(cor_df) <- c("Var1", "Var2", "Correlation")
-# 
-# # Convert factors to characters
-# cor_df$Var1 <- as.character(cor_df$Var1)
-# cor_df$Var2 <- as.character(cor_df$Var2)
-# 
-# # Keep only unique pairs (upper triangle)
-# cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
-# 
-# # Filter by threshold
-# high_corr <- subset(cor_df, abs(Correlation) > 0.6)
-# 
-# # Sort by correlation strength
-# high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
-# 
-# high_corr
+#  cor_mat <- cor(birds[sapply(birds, is.numeric)], 
+#                 use = "pairwise.complete.obs")
+#  
+#  # Convert matrix to a data frame of pairs
+#  cor_df <- as.data.frame(as.table(cor_mat))
+#  
+# # # Rename columns
+#  names(cor_df) <- c("Var1", "Var2", "Correlation")
+# # 
+# # # Convert factors to characters
+#  cor_df$Var1 <- as.character(cor_df$Var1)
+#  cor_df$Var2 <- as.character(cor_df$Var2)
+# # 
+#  # Keep only unique pairs (upper triangle)
+#  cor_df <- cor_df[cor_df$Var1 < cor_df$Var2, ]
+# # 
+#  # Filter by threshold
+#  high_corr <- subset(cor_df, abs(Correlation) > 0.6)
+#  
+#  # Sort by correlation strength
+#  high_corr <- high_corr[order(-abs(high_corr$Correlation)), ]
+#  high_corr
 
-# relevant correlations
+# relevant correlations to check more for collinearity
 
 #                               Var1                      Var2 Correlation
 # 10                          Julian                    Season  -0.9593386
 # 436                         Season                      SPEI   0.7964145
+# 770 DaysSinceLastPrecipitation_5mm PrecipitationAmount_7days  -0.7586376
 # 445                         Julian                      SPEI  -0.6736094
+# 305 DaysSinceLastPrecipitation_5mm                    Julian   0.6277669
 
 #------------------------------------------------------------------------------#
 #                             standardize data                              ----                        
@@ -183,7 +185,7 @@ birds.cs$Permanence <- relevel(birds.cs$Permanence,
 
 # best agricultural model
 global.model <- glm(PlasmaDetection ~ LogCropDistance + Event + PercentAg +
-                      DominantCrop,
+                    DominantCrop,
                     family = "binomial",
                     data = birds.cs,
                     na.action = na.fail)
@@ -195,7 +197,7 @@ car::vif(global.model) # vif < 4
 dredge(global.model)
 
 # Model selection table 
-# (Intrc) DmnnC Event   LgCrD    PrcnA df   logLik  AICc delta weight
+#    (Intrc) DmnnC Event   LgCrD    PrcnA df   logLik  AICc delta weight
 # 7  -0.5162           + -0.5918           5  -75.327 161.0  0.00  0.520
 # 15 -0.3873           + -0.7086 -0.24750  6  -74.878 162.3  1.25  0.278
 # 8   0.3153     +     + -0.8985           8  -74.020 164.9  3.91  0.073
@@ -240,7 +242,7 @@ plotResiduals(simulationOutput, form = model.frame(m1)$PercentAg)  # good
 # best wetland dynamics model
 # model without log-transformation is better
 global.model <- glm(PlasmaDetection ~ Event + Dist_Closest_Wetland_m +
-                      Permanence,
+                      Permanence + Porosity,
                     family = "binomial",
                     data = birds.cs,
                     na.action = na.fail)
@@ -582,6 +584,7 @@ ggsave(filename = "Model-averaged Plasma Neonic Results_2026-01-20.tiff",
        width = 13, height = 8, units = "in", device='tiff', dpi=300)
 
 #------------------------------------------------------------------------------#
+
 
 # interpreting results
 # what's so interesting about isolated wetlands?
