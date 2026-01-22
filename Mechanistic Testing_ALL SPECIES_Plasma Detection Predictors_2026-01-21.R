@@ -18,11 +18,18 @@ library(lme4)
 
 # ANALYSIS NOTES:
 # Event is included in every model due to strong temporal influence
-# Stage I: Identify the best candidate model for each hypothesis using AICc
-# -> If multiple models from stage I are within 2 deltaAICc, select the top and
-# most parsimonious model
+# STAGE I: Identify the best candidate model for each hypothesis using AICc
+# -> If multiple models from stage I are within 2 deltaAICc, we ran an
+# additional model with covariates from those models to see if improved
+# model fit. If it did not, we then selected the top and most parsimonious model. 
+# NOTE: this didn't happen for the plasma neonic analysis
 # I originally had another hypothesis (days since precipitation event + 
 # precipitation amount, but both were highly correlated so I removed this; r = -0.75)
+# I identified correlations from an earlier analysis. Season & SPEI (r = 0.90)
+# and Precipitation Amount & Days Since Last Precipitation Event (r = -0.75) 
+
+# STAGE II:
+# Model selection of the top hypotheses. Model average 95% confidence set.
 
 #------------------------------------------------------------------------------#
 #                        load data and organize datasets                    ----                        
@@ -71,8 +78,8 @@ birds <- birds %>%
   mutate(LogPrecipDays = log(LogPrecipDays))
 
 # filter out long-billed dowitchers to test for the effect of species
-birds <- birds %>% 
-  filter(Species != "Longbilled Dowitcher")
+# birds <- birds %>% 
+#   filter(Species != "Longbilled Dowitcher")
 
 # convert characters to factors
 birds <- birds %>% 
@@ -142,8 +149,6 @@ m4 <- glm(PlasmaDetection ~ PercentAg + LogCropDistance + Event,
           data = birds.cs,
           family = "binomial")
 
-car::vif(m4) # vif < 2
-
 model_names <- paste0("m", 1:4)
 models <- mget(model_names)
 aictab(models, modnames = model_names)
@@ -161,6 +166,19 @@ m.ag <- glm(PlasmaDetection ~ LogCropDistance + Event,
             family = "binomial",
             data = birds.cs)
 
+car::vif(m.ag) # vif < 2
+
+# model validation --> good with more simulations
+simulationOutput <- simulateResiduals(fittedModel = m.ag, n = 2000) 
+plot(simulationOutput)
+testDispersion(m.ag) 
+testUniformity(simulationOutput)
+testOutliers(simulationOutput) 
+testQuantiles(simulationOutput) 
+
+plotResiduals(simulationOutput, form = model.frame(m.ag)$LogCropDistance) # good
+plotResiduals(simulationOutput, form = model.frame(m.ag)$Event) # good
+
 #------------------------------------------------------------------------------#
 
 # *contaminant candidate model ----
@@ -172,6 +190,18 @@ m.pesticide <- glm(PlasmaDetection ~ EnvDetection + Event,
                family = "binomial",
                data = birds.cs)
 
+car::vif(m.pesticide) # vif < 3
+
+# model validation --> good
+simulationOutput <- simulateResiduals(fittedModel = m.pesticide, n = 2000) 
+plot(simulationOutput)
+testDispersion(m.pesticide) 
+testUniformity(simulationOutput)
+testOutliers(simulationOutput) 
+testQuantiles(simulationOutput) 
+
+plotResiduals(simulationOutput, form = model.frame(m.pesticide)$EnvDetection) # good
+plotResiduals(simulationOutput, form = model.frame(m.pesticide)$Event) # good
 
 #------------------------------------------------------------------------------#
 
@@ -224,9 +254,36 @@ aictab(models, modnames = model_names)
 # m2 5 168.08       1.58   0.16   0.86 -78.86
 # m3 5 168.35       1.85   0.14   1.00 -78.99
 
+# does including both m1 and m4 improve fit? no
+# m1 <- glm(PlasmaDetection ~ AnnualPrecipitation_in + 
+#             DaysSinceLastPrecipitation_5mm + Event,
+#           family = "binomial",
+#           data = birds.cs)
+# 
+# m2 <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Event,
+#           family = "binomial",
+#           data = birds.cs)
+# 
+# model_names <- paste0("m", 1:2)
+# models <- mget(model_names)
+# aictab(models, modnames = model_names)
+
 m.precip <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Event,
             family = "binomial",
             data = birds.cs)
+
+car::vif(m.precip) # vif < 2
+
+# model validation --> good
+simulationOutput <- simulateResiduals(fittedModel = m.precip, n = 1000) 
+plot(simulationOutput)
+testDispersion(m.precip) 
+testUniformity(simulationOutput)
+testOutliers(simulationOutput) 
+testQuantiles(simulationOutput) 
+
+plotResiduals(simulationOutput, form = model.frame(m.precip)$EnvDetection) # good
+plotResiduals(simulationOutput, form = model.frame(m.precip)$AnnualPrecipitation_in) # good
 
 #------------------------------------------------------------------------------#
 
@@ -238,6 +295,19 @@ m.precip <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Event,
 m.drought <- glm(PlasmaDetection ~ SPEI + Event,
                  family = "binomial",
                  data = birds.cs)
+
+car::vif(m.drought) # vif < 3
+
+# model validation --> good
+simulationOutput <- simulateResiduals(fittedModel = m.drought, n = 1000) 
+plot(simulationOutput)
+testDispersion(m.drought) 
+testUniformity(simulationOutput)
+testOutliers(simulationOutput) 
+testQuantiles(simulationOutput) 
+
+plotResiduals(simulationOutput, form = model.frame(m.drought)$EnvDetection) # good
+plotResiduals(simulationOutput, form = model.frame(m.drought)$SPEI) # good
 
 #------------------------------------------------------------------------------#
 
@@ -297,11 +367,21 @@ m.lifehistory <- glm(PlasmaDetection ~ Sex + Event,
                      family = "binomial",
                      data = birds.cs)
 
+car::vif(m.lifehistory) # vif < 2
+
+# model validation --> good
+simulationOutput <- simulateResiduals(fittedModel = m.lifehistory, n = 1000) 
+plot(simulationOutput)
+testDispersion(m.lifehistory) 
+testUniformity(simulationOutput)
+testOutliers(simulationOutput) 
+testQuantiles(simulationOutput) 
+
+plotResiduals(simulationOutput, form = model.frame(m.lifehistory)$Event) # good
+plotResiduals(simulationOutput, form = model.frame(m.lifehistory)$Sex) # good
 #------------------------------------------------------------------------------#
 
 # *hydrology candidate models ----
-
-
 
 ###... PERMANENCE HYPOTHESIS ----
 # (detections will be influenced by how long wetlands retain water)
@@ -311,10 +391,6 @@ m.lifehistory <- glm(PlasmaDetection ~ Sex + Event,
 m1 <- glm(PlasmaDetection ~ Permanence + Event,
           family = "binomial",
           data = birds.cs)
-
-#----------------#
-## ADD POROSITY
-#----------------#
 
 ###... SHORELINE POROSITY HYPTHESIS ----
 # (detections will be higher in more porous wetlands)
@@ -328,6 +404,7 @@ m2 <- glm(PlasmaDetection ~ Porosity + Event,
 # Mechanism: Birds captured in isolated wetlands will have less detections
 # compared to birds captured in connected wetlands because they have more
 # exposure opportunities prior to capture
+# log transformation does NOT improve model fit (wt = 0.41)
 m3 <- glm(PlasmaDetection ~ Dist_Closest_Wetland_m + Event,
           family = "binomial",
           data = birds.cs)
@@ -343,3 +420,198 @@ m4 <- glm(PlasmaDetection ~ Permanence + Dist_Closest_Wetland_m + Event,
 model_names <- paste0("m", 1:4)
 models <- mget(model_names)
 aictab(models, modnames = model_names)
+
+# Model selection based on AICc:
+#   
+#    K   AICc Delta_AICc AICcWt Cum.Wt     LL
+# m3 5 161.02       0.00   0.57   0.57 -75.33
+# m4 7 161.71       0.69   0.40   0.97 -73.51
+# m2 5 168.06       7.04   0.02   0.99 -78.85
+# m1 6 168.75       7.73   0.01   1.00 -78.12
+
+m.hydrology <- glm(PlasmaDetection ~ Dist_Closest_Wetland_m + Event ,
+                   family = "binomial",
+                   data = birds.cs)
+
+car::vif(m.hydrology) # vif < 2
+
+# model validation --> good
+simulationOutput <- simulateResiduals(fittedModel = m.hydrology, n = 1000) 
+plot(simulationOutput)
+testDispersion(m.hydrology) 
+testUniformity(simulationOutput)
+testOutliers(simulationOutput) 
+testQuantiles(simulationOutput) 
+
+plotResiduals(simulationOutput, form = model.frame(m.hydrology)$Event) # good
+plotResiduals(simulationOutput, form = model.frame(m.hydrology)$Dist_Closest_Wetland_m) # good
+
+#------------------------------------------------------------------------------#
+
+# *temporal candidate models ----
+
+###... FORAGING TIME HYPOTHESIS ----
+# (detections increase during foraging periods)
+# Mechanism: Birds are more likely to be exposed during periods of 
+# foraging 
+# No model violation issues with time (given cyclical nature)
+m1 <- glm(PlasmaDetection ~ time_hours + Event,
+          family = "binomial",
+          data = birds.cs)
+
+###... JULIAN DAY HYPOTHESIS ----
+# (detections change throughout a season)
+m2 <- glm(PlasmaDetection ~ Julian + Event,
+          family = "binomial",
+          data = birds.cs)
+
+###... SAMPLING EVENT HYPOTHESIS/INFORMED NULL ----
+# (detections are only influenced by the season and year we captured birds in)
+m3 <- glm(PlasmaDetection ~ Event,
+          family = "binomial",
+          data = birds.cs)
+
+model_names <- paste0("m", 1:3)
+models <- mget(model_names)
+aictab(models, modnames = model_names)
+
+m.time <- glm(PlasmaDetection ~ Event,
+              family = "binomial",
+              data = birds.cs)
+
+#------------------------------------------------------------------------------#
+#                       hypothesis model selection                          ----                        
+#------------------------------------------------------------------------------#
+
+models <- list(
+  Time        = m.time,
+  Agriculture = m.ag,
+  Precip      = m.precip,
+  LifeHistory = m.lifehistory,
+  Hydrology   = m.hydrology,
+  Pesticide   = m.pesticide,
+  Drought     = m.drought
+)
+
+aictab(cand.set = models)
+# 
+# Model selection based on AICc:
+#   
+#             K   AICc Delta_AICc AICcWt Cum.Wt     LL
+# Agriculture 5 161.02       0.00   0.44   0.44 -75.33
+# Hydrology   5 161.02       0.00   0.44   0.89 -75.33
+# Time        4 166.31       5.30   0.03   0.92 -79.04
+# LifeHistory 5 166.32       5.30   0.03   0.95 -77.98
+# Precip      5 166.50       5.48   0.03   0.98 -78.07
+# Pesticide   5 168.42       7.40   0.01   0.99 -79.03
+# Drought     5 168.43       7.41   0.01   1.00 -79.03
+
+#------------------------------------------------------------------------------#
+#                               model average                               ----                        
+#------------------------------------------------------------------------------#
+
+model_avg <- model.avg(m.ag, m.hydrology, m.time, m.lifehistory)
+
+summary(model_avg)
+confint(model_avg)
+
+# Model-averaged coefficients:  
+#   (full average) 
+#                        Estimate Std. Error Adjusted SE z value Pr(>|z|)    
+# (Intercept)            -0.62018    0.45122     0.45436   1.365 0.172270    
+# LogCropDistance        -0.27650    0.33337     0.33389   0.828 0.407618    
+# EventFall 2023         -0.96080    0.54156     0.54547   1.761 0.078167 .  
+# EventSpring 2022        4.21093    1.12903     1.13707   3.703 0.000213 ***
+# EventSpring 2023       -0.64941    0.69138     0.69583   0.933 0.350671    
+# Dist_Closest_Wetland_m  0.29093    0.34835     0.34887   0.834 0.404324    
+# SexM                   -0.01941    0.12819     0.12849   0.151 0.879908   
+
+#                             2.5 %     97.5 %
+# (Intercept)            -1.5107032  0.2703519
+# LogCropDistance        -1.0388668 -0.1446794
+# EventFall 2023         -2.0298980  0.1082976
+# EventSpring 2022        1.9823231  6.4395378
+# EventSpring 2023       -2.0132199  0.7143937
+# Dist_Closest_Wetland_m  0.1697762  1.0769380
+# SexM                   -1.3861720  0.2084972
+
+#------------------------------------------------------------------------------#
+#                               graph results                               ----                        
+#------------------------------------------------------------------------------#
+
+# plot results
+
+# extract estimates
+b <- coef(model_avg)
+
+# extract CI
+ci <- confint(model_avg)
+
+# combine into a dataframe
+df <- data.frame(
+  term = names(b),
+  estimate = b,
+  conf_low = ci[, 1],
+  conf_high = ci[, 2]
+)
+
+# remove intercept
+df <- subset(df, term != "(Intercept)")
+
+# order factors from highest to lowest
+# df$term <- factor(
+#   df$term,
+#   levels = df$term[order(df$estimate)]
+# )
+
+# add reference levels to plot
+ref_levels <- data.frame(
+  term = c("Sampling Event (Fall 2021)",
+           "Sex (Female)"), 
+  estimate = 0,
+  conf_low = 0,
+  conf_high = 0
+)
+
+df <- rbind(df, ref_levels)
+
+# relabel terms
+df$term <- factor(
+  df$term,
+  levels = rev(c("EventSpring 2022",
+                 "EventSpring 2023",
+                 "EventFall 2023",
+                 "Sampling Event (Fall 2021)",
+                 "Dist_Closest_Wetland_m",
+                 "LogCropDistance",
+                 "SexM",
+                 "Sex (Female)")),
+  labels = rev(c("Sampling Event (Spring 2022)",
+                 "Sampling Event (Spring 2023)",
+                 "Sampling Event (Fall 2023)",
+                 "Sampling Event (Fall 2021)",
+                 "Distance to Nearest Wetland",
+                 "Log(Distance to Nearest Crop)",
+                 "Sex (Male)",
+                 "Sex (Female)")))
+
+# graph results
+ggplot(df, aes(x = estimate, y = term)) +
+  geom_vline(xintercept = 0, 
+             linetype = "dashed", 
+             color = "grey50",
+             linewidth = 0.74) +
+  geom_errorbar(aes(xmin = conf_low, 
+                    xmax = conf_high), 
+                width = 0.3, 
+                linewidth = 1.15) +
+  geom_point(size = 3.5) + my_theme +
+  labs(
+    x = "Standardized Parameter Estimate",
+    y = "")
+
+# save figure
+ggsave(filename = "Model-averaged Plasma Neonic Results_2026-01-22.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
+
