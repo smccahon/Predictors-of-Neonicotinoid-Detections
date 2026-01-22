@@ -2,7 +2,7 @@
 # Predictors of Neonics in Plasma #
 #   Analysis by Shelby McCahon    #
 #      Created: 2026-01-21        #
-#     Modified: 2026-01-21        #
+#     Modified: 2026-01-22        #
 #---------------------------------#
 
 # load packages
@@ -21,6 +21,8 @@ library(lme4)
 # Stage I: Identify the best candidate model for each hypothesis using AICc
 # -> If multiple models from stage I are within 2 deltaAICc, select the top and
 # most parsimonious model
+# I originally had another hypothesis (days since precipitation event + 
+# precipitation amount, but both were highly correlated so I removed this; r = -0.75)
 
 #------------------------------------------------------------------------------#
 #                        load data and organize datasets                    ----                        
@@ -67,6 +69,10 @@ birds <- birds %>%
 birds <- birds %>% 
   mutate(LogPrecipDays = DaysSinceLastPrecipitation_5mm + 0.0001) %>% 
   mutate(LogPrecipDays = log(LogPrecipDays))
+
+# filter out long-billed dowitchers to test for the effect of species
+birds <- birds %>% 
+  filter(Species != "Longbilled Dowitcher")
 
 # convert characters to factors
 birds <- birds %>% 
@@ -198,7 +204,7 @@ m3 <- glm(PlasmaDetection ~ AnnualSnowfall_in + Event,
           family = "binomial",
           data = birds.cs)
 
-### TOTAL PRECIPITATION RUNOFF HYPOTHESIS ----
+###... TOTAL PRECIPITATION RUNOFF HYPOTHESIS ----
 # (detections are influenced by annual levels of precipitation)
 # Mechanism: Annual levels of precipitation influence cumulative neonic
 # exposure and transport into wetlands
@@ -236,49 +242,104 @@ m.drought <- glm(PlasmaDetection ~ SPEI + Event,
 #------------------------------------------------------------------------------#
 
 # *life history candidate models ----
+# results do not include LBDO due to no variation in detection for that species
 
-# GET RID OF DOWITCHERS FOR THIS SET
+###...SPECIES HYPOTHESIS
+# (detections will differ by species)
+# Mechanism: Shorebirds have different diets and forage at different depths and
+# times which could affect exposure
 m1 <- glm(PlasmaDetection ~ Species + Event,
           family = "binomial",
           data = birds.cs)
 
+###...SEX HYPOTHESIS
+# (detections will differ by sex)
+# Mechanism: In some migratory shorebird species, one sex migrates first (e.g.,
+# Lesser Yellowlegs). Some sexes might be differentially exposed to neonics. 
 m2 <- glm(PlasmaDetection ~ Sex + Event,
           family = "binomial",
           data = birds.cs)
 
-
+###... MIGRANT STATUS HYPOTHESIS
+# (detections will differ between migrants and residents)
+# Mechanism: Migrant species may have a higher probability of neonic exposure
+# due to the limited amount of time they have to forage
 m3 <- glm(PlasmaDetection ~ MigStatus + Event,
           family = "binomial",
           data = birds.cs)
 
-
+###... SPECIES AND SEX HYPOTHESIS
+# (detections will vary between species AND sex)
 m4 <- glm(PlasmaDetection ~ Species + Sex + Event,
           family = "binomial",
           data = birds.cs)
 
+
+###... MIGRANT STATUS AND SEX
 m5 <- glm(PlasmaDetection ~ MigStatus + Sex + Event,
           family = "binomial",
           data = birds.cs)
 
+# Model selection based on AICc:
+#   
+#     K   AICc Delta_AICc AICcWt Cum.Wt     LL
+# m2  5 161.22       0.00   0.58   0.58 -75.42
+# m3  5 163.16       1.94   0.22   0.80 -76.39
+# m5  6 163.36       2.13   0.20   1.00 -75.41
+# m1 14 178.17      16.94   0.00   1.00 -73.68
+# m4 15 179.67      18.44   0.00   1.00 -73.22
+
+model_names <- paste0("m", 1:5)
+models <- mget(model_names)
+aictab(models, modnames = model_names)
+
+m.lifehistory <- glm(PlasmaDetection ~ Sex + Event,
+                     family = "binomial",
+                     data = birds.cs)
 
 #------------------------------------------------------------------------------#
 
 # *hydrology candidate models ----
 
+
+
+###... PERMANENCE HYPOTHESIS ----
+# (detections will be influenced by how long wetlands retain water)
+# Mechanism: Birds captured in permanence wetlands may have a higher
+# probability of accumulating neonics because permanence wetlands may
+# accumulate more pesticides over time
 m1 <- glm(PlasmaDetection ~ Permanence + Event,
           family = "binomial",
           data = birds.cs)
 
+#----------------#
+## ADD POROSITY
+#----------------#
+
+###... SHORELINE POROSITY HYPTHESIS ----
+# (detections will be higher in more porous wetlands)
+# Mechanism: Porosity affects water infiltration and runoff
 m2 <- glm(PlasmaDetection ~ Porosity + Event,
           family = "binomial",
           data = birds.cs)
 
-m3 <- glm(PlasmaDetection ~ Permanence + Event,
+###... PROXIMITY TO WETLAND HYPOTHESIS ----
+# (detections will be influenced by wetland connectivity)
+# Mechanism: Birds captured in isolated wetlands will have less detections
+# compared to birds captured in connected wetlands because they have more
+# exposure opportunities prior to capture
+m3 <- glm(PlasmaDetection ~ Dist_Closest_Wetland_m + Event,
           family = "binomial",
           data = birds.cs)
 
-# CHECK FOR LOG TRANSFORMATION
-m4 <- glm(PlasmaDetection ~ Dist_Closest_Wetland_m + Event,
+###... WETLAND HYDROLOGY HYPOTHESIS ----
+# (detections will be influenced both by wetland connectivity and permanence)
+# Mechanism: Birds captured in larger wetlands that are more connected to
+# others will have a higher probability of exposure
+m4 <- glm(PlasmaDetection ~ Permanence + Dist_Closest_Wetland_m + Event,
           family = "binomial",
-          data = birds.cs)
+          data= birds.cs)
 
+model_names <- paste0("m", 1:4)
+models <- mget(model_names)
+aictab(models, modnames = model_names)
