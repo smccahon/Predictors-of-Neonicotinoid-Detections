@@ -2,7 +2,7 @@
 #  Predictors of Neonics in Inverts #
 #     Analysis by Shelby McCahon    #
 #        Created: 2026-01-22        #
-#       Modified: 2026-01-22        #
+#       Modified: 2026-01-23        #
 #-----------------------------------#
 
 # load packages
@@ -15,11 +15,8 @@ library(AICcmodavg)
 # DETAILS OF ANALYSIS
 # STAGE I: Identify the best candidate model for each hypothesis using AICc
 # STAGE II: Identify which hypotheses are supported using model selection
-# STAGE III: Model-average top predictors (95% confidence set)
 
-# ANALYSIS NOTES
-
-
+# variables with correlation > 0.80 not considered in the same model
 
 #------------------------------------------------------------------------------#
 #                        load data and organize datasets                    ----                        
@@ -103,402 +100,256 @@ invert.cs$Permanence <- relevel(invert.cs$Permanence,
 #                   identify best model for each hypothesis                 ----                        
 #------------------------------------------------------------------------------#
 
-#------------------------------------------------------------------------------#
-# ***think more about other hypotheses...check to see if correlations cause
-#  issues
-#------------------------------------------------------------------------------#
-
-# log transformation for crop distance improved fit (wt = 0.55)
-
 # *agriculture candidate models ----
 
-###... LANDSCAPE-SCALE EXPOSURE HYPOTHESIS ----
-# (detections are influenced by overall agricultural intensity)
-# Mechanism: inverts in wetlands with more cropland cover are more likely to
-# encounter neonics
 m1 <- glm(InvertPesticideDetection ~ PercentAg, 
           data = invert.cs,
           family = "binomial")
 
-###... LOCAL CROP PROXIMITY HYPOTHESIS ----
-# (detections are influenced by local proximity to crops)
-# Mechanism: Inverts in wetlands close to crop fields are more likely to be exposed
-# log transformation improves fit (wt. = 0.95)
-
+# log transformation improves fit (wt. = 0.55)
 m2 <- glm(InvertPesticideDetection ~ LogCropDistance, 
           data = invert.cs,
           family = "binomial")
 
-###... CROP-TYPE SPECIFICITY HYPOTHESIS ----
-# (detections are influenced by different crop-type exposure)
-# Mechanism: Certain crop types are more heavily treated with neonics which
-# affects exposure and detection
 m3 <- glm(InvertPesticideDetection ~ DominantCrop, 
           data = invert.cs,
           family = "binomial")
-
-###... VEGETATION BUFFER HYPOTHESIS ----
-# (detections are reduced in wetlands with shoreline vegetation buffers)
-# Mechanism: Exposure is lower in wetlands with buffers (50m)
 
 m4 <- glm(InvertPesticideDetection ~ Buffered, 
           data = invert.cs,
           family = "binomial")
 
-
-###... LOCAL AND LANDSCAPE EXPOSURE HYPOTHESIS ----
-# (detections are influenced by local and landscape-scale cropland cover)
-# Mechanism: Exposure depends on both proximity and landscape-level
-# cropland cover intensity
-
-### these variables are moderately correlated! 
 m5 <- glm(InvertPesticideDetection ~ PercentAg + LogCropDistance, 
           data = invert.cs,
           family = "binomial")
 
+m6 <- glm(InvertPesticideDetection ~ Buffered + PercentAg, 
+          data = invert.cs,
+          family = "binomial")
+
+# Model selection based on AICc:
+#   
+#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# m5 3 73.29       0.00   0.28   0.28 -33.39
+# m2 2 73.32       0.03   0.28   0.56 -34.53
+# m1 2 74.14       0.85   0.18   0.74 -34.94
+# m4 2 74.24       0.95   0.17   0.91 -34.99
+# m6 3 76.39       3.10   0.06   0.97 -34.94
+# m3 5 77.99       4.70   0.03   1.00 -33.33
 
 
+model_names <- paste0("m", 1:6)
+models <- mget(model_names)
+aictab(models, modnames = model_names)
+
+m.ag <- glm(InvertPesticideDetection ~ LogCropDistance, 
+          data = invert.cs,
+          family = "binomial")
+
+
+# model validation --> some pattern, not extreme
+simulationOutput <- simulateResiduals(fittedModel = m.ag, n = 2000) 
+plot(simulationOutput)
+testDispersion(m.ag) 
+testUniformity(simulationOutput)
+testOutliers(simulationOutput) 
+testQuantiles(simulationOutput) 
+
+plotResiduals(simulationOutput, 
+              form = model.frame(m.ag)$LogCropDistance) # pattern
+
+#------------------------------------------------------------------------------#
+
+# *hydrology candidate models ----
+
+m1 <- glm(InvertPesticideDetection ~ Permanence,
+          family = "binomial",
+          data = invert.cs)
+
+m2 <- glm(InvertPesticideDetection ~ Porosity,
+          family = "binomial",
+          data = invert.cs)
+
+m3 <- glm(InvertPesticideDetection ~ LogWetlandDistance,
+          family = "binomial",
+          data = invert.cs)
+
+m4 <- glm(InvertPesticideDetection ~ Permanence + LogWetlandDistance,
+          family = "binomial",
+          data= invert.cs)
 
 model_names <- paste0("m", 1:4)
 models <- mget(model_names)
 aictab(models, modnames = model_names)
 
+# Model selection based on AICc:
+#   
+#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# m1 4 72.00       0.00   0.34   0.34 -31.56
+# m2 2 72.06       0.06   0.33   0.68 -33.91
+# m4 5 73.21       1.22   0.19   0.86 -30.94
+# m3 2 73.85       1.85   0.14   1.00 -34.80
+
+m.hydrology <- glm(InvertPesticideDetection ~ Permanence,
+                   family = "binomial",
+                   data = invert.cs)
+
 # model validation --> good
-simulationOutput <- simulateResiduals(fittedModel = m1, n = 1000) 
-plot(simulationOutput)
-testDispersion(m1) 
-testUniformity(simulationOutput)
-testOutliers(simulationOutput) 
-testQuantiles(simulationOutput) 
-
-plotResiduals(simulationOutput, form = model.frame(m1)$CropDistance) # good
-
-#------------------------------------------------------------------------------#
-
-# best wetland dynamics model
-# log-transformation? YES (although similar wt. = 0.55)
-#  m1 <- glm(InvertPesticideDetection ~ LogWetlandDistance,
-#            family = "binomial",
-#            data = invert.cs,
-#            na.action = na.fail)
-# #
-#  m2 <- glm(InvertPesticideDetection ~ Dist_Closest_Wetland_m,
-#            family = "binomial",
-#            data = invert.cs,
-#            na.action = na.fail)
-#  
-#  model_names <- paste0("m", 1:2)
-#  models <- mget(model_names)
-#  aictab(models, modnames = model_names)
-
-
-global.model <- glm(InvertPesticideDetection ~ Permanence + 
-                      LogWetlandDistance,
-                    family = "binomial",
-                    na.action = na.fail,
-                    data = invert.cs)
-
-# check for collinearity
-car::vif(global.model) # vif < 2
-
-dredge(global.model)
-
-# Model selection table 
-#   (Intrc)  LgWtD Prmnn df  logLik AICc delta weight
-# 3 -1.6090            +  4 -31.563 72.0  0.00  0.357
-# 1 -0.1967               1 -35.105 72.3  0.30  0.308
-# 4 -1.5330 0.3447     +  5 -30.940 73.2  1.22  0.194
-# 2 -0.1992 0.2241        2 -34.799 73.8  1.85  0.141
-# Models ranked by AICc(x) 
-
-# keep both
-m2 <- glm(InvertPesticideDetection ~ Permanence + LogWetlandDistance,
-          data = invert.cs,
-          family = "binomial",
-          na.action = na.fail)
-
-summary(m2)
-confint(m2)
-
-# model validation --> some issues in the residuals but log transformation helped
-simulationOutput <- simulateResiduals(fittedModel = m2, n = 1000) 
+simulationOutput <- simulateResiduals(fittedModel = m.hydrology, 
+                                      n = 1000) 
 plot(simulationOutput)
 testDispersion(m2) 
 testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m2)$Permanence) #  good
-plotResiduals(simulationOutput, form = model.frame(m2)$LogWetlandDistance) #  some pattern
+plotResiduals(simulationOutput, form = model.frame(m.hydrology)$Permanence) #  good
+
 
 #------------------------------------------------------------------------------#
-# best precipitation model
 
-# log-transformation? no 
-# m1 <- glm(InvertPesticideDetection ~ LogPrecipAmount,
-#           family = "binomial",
-#           data = invert.cs,
-#           na.action = na.fail)
-# 
-# m2 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
-#           family = "binomial",
-#           data = invert.cs,
-#           na.action = na.fail)
-# 
-# model_names <- paste0("m", 1:2)
-# models <- mget(model_names)
-# aictab(models, modnames = model_names)
-  
-# log-transformation? YES
-# m1 <- glm(InvertPesticideDetection ~ LogPrecipDays,
-#           family = "binomial",
-#           data = invert.cs,
-#           na.action = na.fail)
-# 
-# m2 <- glm(InvertPesticideDetection ~ DaysSinceLastPrecipitation_5mm,
-#           family = "binomial",
-#           data = invert.cs,
-#           na.action = na.fail)
-# 
-# model_names <- paste0("m", 1:2)
-# models <- mget(model_names)
-# aictab(models, modnames = model_names)
+# *water quality candidate models ----
 
-#### taking into consideration of correlations
+m1 <- glm(InvertPesticideDetection ~ pH_probe,
+            family = "binomial",
+            data= invert.cs)
 
-# precipitation amount performed better than days since event (AICc wt = 0.80)
-# m1 <- glm(InvertPesticideDetection ~ LogPrecipDays,
-#           family = "binomial",
-#           data = invert.cs,
-#           na.action = na.fail) 
-# 
-# m2 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
-#           family = "binomial",
-#           data = invert.cs,
-#           na.action = na.fail)
-# 
-# model_names <- paste0("m", 1:2)
-# models <- mget(model_names)
-# aictab(models, modnames = model_names)
- 
-
-# including all correlated variables
- global.model <- glm(InvertPesticideDetection ~ AnnualSnowfall_in + 
-                       AnnualPrecipitation_in + PrecipitationAmount_7days +
-                       LogPrecipDays,
-                     family = "binomial",
-                     na.action = na.fail,
-                     data = invert.cs)
- 
-# removing correlated variables
-# retain all variables...
- global.model <- glm(InvertPesticideDetection ~ AnnualSnowfall_in + 
-                       AnnualPrecipitation_in + PrecipitationAmount_7days,
-                     family = "binomial",
-                     na.action = na.fail,
-                     data = invert.cs)
- 
-# check for collinearity
-car::vif(global.model) # vif < 2
-
-dredge(global.model)
-
-# considering correlations
-# retain all variables...
-m3 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days +
-            AnnualSnowfall_in + 
-            AnnualPrecipitation_in + LogPrecipDays,
+m2 <- glm(InvertPesticideDetection ~ WaterTemp,
           family = "binomial",
-          na.action = na.fail,
+          data= invert.cs)
+
+m3 <- glm(InvertPesticideDetection ~ pH_probe + WaterTemp,
+          family = "binomial",
+          data= invert.cs)
+
+model_names <- paste0("m", 1:3)
+models <- mget(model_names)
+aictab(models, modnames = model_names)
+
+# Model selection based on AICc:
+#   
+#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# m1 2 72.80       0.00   0.57   0.57 -34.28
+# m2 2 74.45       1.64   0.25   0.81 -35.10
+# m3 3 75.03       2.23   0.19   1.00 -34.26
+
+m.waterquality <- glm(InvertPesticideDetection ~ pH_probe,
+                      family = "binomial",
+                      data= invert.cs)
+
+
+#------------------------------------------------------------------------------#
+
+# *precipitation candidate models ----
+
+# log transformation supported (wt = 0.80)
+m1 <- glm(InvertPesticideDetection ~ LogPrecipDays,
+          family = "binomial",
           data = invert.cs)
 
+# log transformation was not supported (wt = 0.28)
+m2 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
+          family = "binomial",
+          data = invert.cs)
+
+m3 <- glm(InvertPesticideDetection ~ AnnualSnowfall_in,
+          family = "binomial",
+          data = invert.cs)
+
+m4 <- glm(InvertPesticideDetection ~ AnnualPrecipitation_in,
+          family = "binomial",
+          data = invert.cs)
+
+model_names <- paste0("m", 1:4)
+models <- mget(model_names)
+aictab(models, modnames = model_names)
+
+# Model selection based on AICc:
+#   
+#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# m2 2 65.53       0.00   0.78   0.78 -30.64
+# m1 2 68.29       2.77   0.20   0.98 -32.02
+# m3 2 74.20       8.67   0.01   0.99 -34.97
+# m4 2 74.45       8.93   0.01   1.00 -35.10
+
+m.precip <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
+                family = "binomial",
+                data = invert.cs)
 
 # model validation --> no severe issues
-simulationOutput <- simulateResiduals(fittedModel = m3) 
+simulationOutput <- simulateResiduals(fittedModel = m.precip) 
 plot(simulationOutput)
 testDispersion(m3) 
 testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m3)$AnnualSnowfall_in) # good
-plotResiduals(simulationOutput, form = model.frame(m3)$PrecipitationAmount_7days) # pattern
-plotResiduals(simulationOutput, form = model.frame(m3)$AnnualPrecipitation_in) # good
+plotResiduals(simulationOutput, form = model.frame(m3)$PrecipitationAmount_7days) # good
 
 #------------------------------------------------------------------------------#
 
-# temporal model
-m4 <- glm(InvertPesticideDetection ~ Season,
-          data = invert.cs,
-          family = "binomial",
-          na.action = na.fail)
+# *temporal candidate models ----
+m.time <- glm(InvertPesticideDetection ~ Season,
+              data = invert.cs,
+              family = "binomial",
+              na.action = na.fail)
 
-summary(m4)
-confint(m4)
 
 # model validation --> good
-simulationOutput <- simulateResiduals(fittedModel = m4) 
+simulationOutput <- simulateResiduals(fittedModel = m.time) 
 plot(simulationOutput)
-testDispersion(m4) 
+testDispersion(m.time) 
 testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m4)$Season) #  good
+plotResiduals(simulationOutput, form = model.frame(m.time)$Season) #  good
 
 #------------------------------------------------------------------------------#
 
 # null model
 
-m5 <- glm(InvertPesticideDetection ~ 1,
+m.null <- glm(InvertPesticideDetection ~ 1,
           family = "binomial",
           data = invert.cs)
 
-# STAGE II: Cross-hypothesis
 
-# AIC model selection
-model_names <- paste0("m", 1:5)
-models <- mget(model_names)
-aictab(models, modnames = model_names)
+#------------------------------------------------------------------------------#
+#                 STAGE II: evaluate support for hypotheses                 ----                        
+#------------------------------------------------------------------------------#
 
-# NOT CONSIDERING CORRELATIONS
-# Model selection based on AICc:
-#   
-#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
-# m3 5 69.48       0.00   0.65   0.65 -29.07
-# m5 1 72.29       2.81   0.16   0.81 -35.11
-# m2 5 73.21       3.73   0.10   0.91 -30.94
-# m4 2 74.33       4.85   0.06   0.97 -35.04
-# m1 4 75.51       6.03   0.03   1.00 -33.32
+models <- list(
+  Time        = m.time,
+  Agriculture = m.ag,
+  Precip      = m.precip,
+  Hydrology   = m.hydrology,
+  Null        = m.null,
+  Water       = m.waterquality
+)
 
-# CONSIDERING CORRELATIONS
-# Model selection based on AICc:
-#   
-#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
-# m3 5 69.48       0.00   0.61   0.61 -29.07
-# m5 1 72.29       2.81   0.15   0.76 -35.11
-# m2 5 73.21       3.73   0.09   0.86 -30.94
-# m1 2 73.32       3.83   0.09   0.95 -34.53
-# m4 2 74.33       4.85   0.05   1.00 -35.04
-
+aictab(cand.set = models)
 
 # Model selection based on AICc:
 #   
-#    K  AICc Delta_AICc AICcWt Cum.Wt     LL
-# m3 2 65.53       0.00   0.90   0.90 -30.64
-# m2 4 72.00       6.47   0.04   0.94 -31.56
-# m5 1 72.29       6.77   0.03   0.97 -35.11
-# m1 2 73.32       7.79   0.02   0.99 -34.53
-# m4 2 74.33       8.80   0.01   1.00 -35.04
+#             K  AICc Delta_AICc AICcWt Cum.Wt     LL
+# Precip      2 65.53       0.00   0.88   0.88 -30.64
+# Hydrology   4 72.00       6.47   0.03   0.92 -31.56
+# Null        1 72.29       6.77   0.03   0.95 -35.11
+# Water       2 72.80       7.28   0.02   0.97 -34.28
+# Agriculture 2 73.32       7.79   0.02   0.99 -34.53
+# Time        2 74.31       8.79   0.01   1.00 -35.03
 
+confint(m.precip)
+summary(m.precip)
+
+# view results
 ggplot(invert,
-       aes(x = InvertPesticideDetection,
-           y = PrecipitationAmount_7days)) + geom_boxplot() + my_theme
+       aes(y = PrecipitationAmount_7days,
+           x = InvertPesticideDetection)) +
+  geom_boxplot() + my_theme
 
 #------------------------------------------------------------------------------#
-
-# STAGE III: model average
-model_avg <- model.avg(m3, m2, m5)
-
-summary(model_avg)
-confint(model_avg)
-
-# Model-averaged coefficients:  
-#   (full average) 
-#                            Estimate Std. Error Adjusted SE z value Pr(>|z|)  
-# (Intercept)               -0.376024   0.453721    0.462008   0.814   0.4157  
-# PrecipitationAmount_7days -1.081054   0.494948    0.505149   2.140   0.0323 *
-# PermanencePermanent        0.074846   0.441503    0.444677   0.168   0.8663  
-# PermanenceSeasonal         0.008447   0.266269    0.273126   0.031   0.9753  
-# PermanenceSemipermanent    0.066761   0.412826    0.416514   0.160   0.8727  
-
-#                                2.5 %     97.5 %
-# (Intercept)               -1.2815427  0.5294941
-# PrecipitationAmount_7days -2.0374959 -0.2096799
-# PermanencePermanent       -0.3929666  4.3472920
-# PermanenceSeasonal        -2.4945680  2.9408551
-# PermanenceSemipermanent   -0.7080897  4.2352669
-
+#                             PLOT TOP MODEL(s)                             ----                        
 #------------------------------------------------------------------------------#
 
-# plot results
 
-# extract estimates
-b <- coef(model_avg)
-
-# extract CI
-ci <- confint(model_avg)
-
-# combine into a dataframe
-df <- data.frame(
-  term = names(b),
-  estimate = b,
-  conf_low = ci[, 1],
-  conf_high = ci[, 2]
-)
-
-# remove intercept
-df <- subset(df, term != "(Intercept)")
-
-# order factors from highest to lowest
-df$term <- factor(
-  df$term,
-  levels = df$term[order(df$estimate)]
-)
-
-# add reference levels to plot
-ref_levels <- data.frame(
-  term = c("Wetland Permanence (Temporary)"), 
-  estimate = 0,
-  conf_low = 0,
-  conf_high = 0
-)
-
-df <- rbind(df, ref_levels)
-
-# relabel terms
-df$term <- factor(
-  df$term,
-  levels = rev(c("PermanencePermanent",
-                 "PermanenceSemipermanent",
-                 "PermanenceSeasonal",
-                 "Wetland Permanence (Temporary)",
-                 "BufferedY",
-                 "No Buffer Presence",
-                 "AnnualPrecipitation_in",
-                 "AnnualSnowfall_in",
-                 "PrecipitationAmount_7days",
-                 "PercentAg",
-                 "NearestCropDistance_m")),
-  labels = rev(c("Wetland Permanence (Permanent)",
-                 "Wetland Permanence (Semi-permanent)",
-                 "Wetland Permanence (Temporary/Seasonal)",
-                 "Buffer Presence",
-                 "No Buffer Presence",
-                 "Annual Precipitation",
-                 "Annual Snowfall",
-                 "Precipitation Amount (Last 7 Days)",
-                 "% Surrounding Cropland Cover",
-                 "Nearest Crop Distance"
-                 )))
-
-# graph results
-ggplot(df, aes(x = estimate, y = term)) +
-  geom_vline(xintercept = 0, 
-             linetype = "dashed", 
-             color = "grey50",
-             linewidth = 0.74) +
-  geom_errorbar(aes(xmin = conf_low, 
-                    xmax = conf_high), 
-                width = 0.3, 
-                linewidth = 1.15) +
-  geom_point(size = 3.5) + my_theme +
-  labs(
-    x = "Standardized Parameter Estimate",
-    y = "")
-
-
-# plot relationships
-ggplot(invert, aes(y = LogPrecipAmount,
-                  x = InvertPesticideDetection)) +
-  geom_point()

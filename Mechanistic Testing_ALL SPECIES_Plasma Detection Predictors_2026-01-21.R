@@ -19,17 +19,18 @@ library(lme4)
 # ANALYSIS NOTES:
 # Event is included in every model due to strong temporal influence
 # STAGE I: Identify the best candidate model for each hypothesis using AICc
-# -> If multiple models from stage I are within 2 deltaAICc, we ran an
-# additional model with covariates from those models to see if improved
-# model fit. If it did not, we then selected the top and most parsimonious model. 
-# NOTE: this didn't happen for the plasma neonic analysis
-# I originally had another hypothesis (days since precipitation event + 
-# precipitation amount, but both were highly correlated so I removed this; r = -0.75)
+
+###  If multiple models from stage I are supported (within 2 deltaAICc), we 
+### selected the most supported and parsimonious model. 
+
+
+# STAGE II:
+# Model selection of the top hypotheses
+
 # I identified correlations from an earlier analysis. Season & SPEI (r = 0.90)
 # and Precipitation Amount & Days Since Last Precipitation Event (r = -0.75) 
 
-# STAGE II:
-# Model selection of the top hypotheses. Model average 95% confidence set.
+# variables with correlation > 0.80 not considered in the same model
 
 #------------------------------------------------------------------------------#
 #                        load data and organize datasets                    ----                        
@@ -110,14 +111,14 @@ birds.cs$Permanence <- relevel(birds.cs$Permanence,
                                ref = "Temporary/Seasonal")
 
 #------------------------------------------------------------------------------#
-#                   identify best model for each hypothesis                 ----                        
+#               STAGE I: identify best model for each hypothesis            ----                        
 #------------------------------------------------------------------------------#
 
 # *agriculture candidate models ----
 
 ###... LANDSCAPE-SCALE EXPOSURE HYPOTHESIS ----
 # (detections are influenced by overall agricultural intensity)
-# Mechanism: Birds in landsacpes with more cropland cover are more likely to
+# Mechanism: Birds in landscapes with more cropland cover are more likely to
 # encounter neonic residues
 m1 <- glm(PlasmaDetection ~ PercentAg + Event, 
           data = birds.cs,
@@ -143,7 +144,7 @@ m3 <- glm(PlasmaDetection ~ DominantCrop + Event,
 
 ###... LOCAL AND LANDSCAPE EXPOSURE HYPOTHESIS ----
 # (detections are influenced by local and landscape-scale cropland cover)
-# Mechanism: Exposure depends on both proximity and landscale-level
+# Mechanism: Exposure depends on both proximity and landscape-level
 # cropland cover intensity
 m4 <- glm(PlasmaDetection ~ PercentAg + LogCropDistance + Event, 
           data = birds.cs,
@@ -459,19 +460,13 @@ m1 <- glm(PlasmaDetection ~ time_hours + Event,
           family = "binomial",
           data = birds.cs)
 
-###... JULIAN DAY HYPOTHESIS ----
-# (detections change throughout a season)
-m2 <- glm(PlasmaDetection ~ Julian + Event,
-          family = "binomial",
-          data = birds.cs)
-
 ###... SAMPLING EVENT HYPOTHESIS/INFORMED NULL ----
 # (detections are only influenced by the season and year we captured birds in)
-m3 <- glm(PlasmaDetection ~ Event,
+m2 <- glm(PlasmaDetection ~ Event,
           family = "binomial",
           data = birds.cs)
 
-model_names <- paste0("m", 1:3)
+model_names <- paste0("m", 1:2)
 models <- mget(model_names)
 aictab(models, modnames = model_names)
 
@@ -480,7 +475,7 @@ m.time <- glm(PlasmaDetection ~ Event,
               data = birds.cs)
 
 #------------------------------------------------------------------------------#
-#                       hypothesis model selection                          ----                        
+#                 STAGE II: evaluate support for hypotheses                 ----                        
 #------------------------------------------------------------------------------#
 
 models <- list(
@@ -505,6 +500,33 @@ aictab(cand.set = models)
 # Precip      5 166.50       5.48   0.03   0.98 -78.07
 # Pesticide   5 168.42       7.40   0.01   0.99 -79.03
 # Drought     5 168.43       7.41   0.01   1.00 -79.03
+
+#------------------------------------------------------------------------------#
+#                   STAGE III: assessing combined effects                   ----                        
+#------------------------------------------------------------------------------#
+
+m.combined <- glm(PlasmaDetection ~ LogCropDistance + Event + 
+              Dist_Closest_Wetland_m,
+              family = "binomial",
+              data = birds.cs)
+
+models <- list(
+  Agriculture = m.ag,
+  Hydrology   = m.hydrology,
+  Combined    = m.combined)
+
+aictab(cand.set = models)
+
+# Model selection based on AICc:
+#   
+#             K   AICc Delta_AICc AICcWt Cum.Wt     LL
+# Combined    6 160.54       0.00   0.39   0.39 -74.02
+# Agriculture 5 161.02       0.47   0.31   0.69 -75.33
+# Hydrology   5 161.02       0.48   0.31   1.00 -75.33 
+
+summary(m.combined)
+
+car::vif(m.combined) # vif < 2
 
 #------------------------------------------------------------------------------#
 #                               model average                               ----                        
@@ -614,4 +636,8 @@ ggplot(df, aes(x = estimate, y = term)) +
 ggsave(filename = "Model-averaged Plasma Neonic Results_2026-01-22.tiff",
        path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
        width = 13, height = 8, units = "in", device='tiff', dpi=300)
+
+#------------------------------------------------------------------------------#
+#                             PLOT TOP MODEL(s)                             ----                        
+#------------------------------------------------------------------------------#
 

@@ -2,7 +2,7 @@
 # Predictors of Neonics in Lesser Yellowlegs Plasma #
 #           Analysis by Shelby McCahon              #
 #              Created: 2026-01-15                  #
-#             Modified: 2026-01-15                  #
+#             Modified: 2026-01-23                  #
 #---------------------------------------------------#
 
 # load packages
@@ -15,8 +15,6 @@ library(AICcmodavg)
 # DETAILS OF ANALYSIS
 # STAGE I: Identify the best predictors within each hypothesis
 # STAGE II: Identify which hypotheses are supported
-# STAGE III: Identify combined effects across hypotheses if multiple hypotheses
-#            are supported
 
 
 # ANALYSIS NOTES: 
