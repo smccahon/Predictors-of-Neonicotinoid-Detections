@@ -2,7 +2,7 @@
 #  Predictors of Neonics in Inverts #
 #     Analysis by Shelby McCahon    #
 #        Created: 2026-01-22        #
-#       Modified: 2026-01-23        #
+#       Modified: 2026-01-28        #
 #-----------------------------------#
 
 # load packages
@@ -11,6 +11,7 @@ library(MuMIn)
 library(glmmTMB)
 library(DHARMa)
 library(AICcmodavg)
+library(trtools)
 
 # DETAILS OF ANALYSIS
 # STAGE I: Identify the best candidate model for each hypothesis using AICc
@@ -64,7 +65,7 @@ invert <- invert %>%
 
 # log transform precipitation amount due to skew
 invert <- invert %>% 
-  mutate(LogPrecipAmount = PrecipitationAmount_7days) %>% 
+  mutate(LogPrecipAmount = PrecipitationAmount_7days_cm) %>% 
   mutate(LogPrecipAmount = log(LogPrecipAmount))
 
 # log transform precipitation events due to skew
@@ -94,7 +95,7 @@ invert.cs$Permanence <- relevel(invert.cs$Permanence,
 # 156                       Buffered                 PercentAg  -0.7439067
 # 151          NearestCropDistance_m                 PercentAg  -0.7261301
 # 72                        Buffered     NearestCropDistance_m   0.6990801
-# 288 DaysSinceLastPrecipitation_5mm PrecipitationAmount_7days  -0.6370290
+# 288 DaysSinceLastPrecipitation_5mm PrecipitationAmount_7days_cm  -0.6370290
 
 #------------------------------------------------------------------------------#
 #                   identify best model for each hypothesis                 ----                        
@@ -248,15 +249,15 @@ m1 <- glm(InvertPesticideDetection ~ LogPrecipDays,
           data = invert.cs)
 
 # log transformation was not supported (wt = 0.28)
-m2 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
+m2 <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days_cm,
           family = "binomial",
           data = invert.cs)
 
-m3 <- glm(InvertPesticideDetection ~ AnnualSnowfall_in,
+m3 <- glm(InvertPesticideDetection ~ AnnualSnowfall_cm,
           family = "binomial",
           data = invert.cs)
 
-m4 <- glm(InvertPesticideDetection ~ AnnualPrecipitation_in,
+m4 <- glm(InvertPesticideDetection ~ AnnualPrecipitation_cm,
           family = "binomial",
           data = invert.cs)
 
@@ -272,7 +273,7 @@ aictab(models, modnames = model_names)
 # m3 2 74.20       8.67   0.01   0.99 -34.97
 # m4 2 74.45       8.93   0.01   1.00 -35.10
 
-m.precip <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days,
+m.precip <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days_cm,
                 family = "binomial",
                 data = invert.cs)
 
@@ -284,7 +285,7 @@ testUniformity(simulationOutput)
 testOutliers(simulationOutput) 
 testQuantiles(simulationOutput) 
 
-plotResiduals(simulationOutput, form = model.frame(m3)$PrecipitationAmount_7days) # good
+plotResiduals(simulationOutput, form = model.frame(m3)$PrecipitationAmount_7days_cm) # good
 
 #------------------------------------------------------------------------------#
 
@@ -344,7 +345,7 @@ summary(m.precip)
 
 # view results
 ggplot(invert,
-       aes(y = PrecipitationAmount_7days,
+       aes(y = PrecipitationAmount_7days_cm,
            x = InvertPesticideDetection)) +
   geom_boxplot() + my_theme
 
@@ -352,4 +353,53 @@ ggplot(invert,
 #                             PLOT TOP MODEL(s)                             ----                        
 #------------------------------------------------------------------------------#
 
+### ...precipitation model ----
+
+# convert to factor to add points to figure
+invert$PesticideDetectionNum <- ifelse(invert$InvertPesticideDetection == "Y", 
+                                       1, 0)
+
+m <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days_cm  ,
+                family = "binomial",
+                data = invert)
+
+d <- expand.grid(
+  PrecipitationAmount_7days_cm   = seq(
+    min(invert$PrecipitationAmount_7days_cm  ),
+    max(invert$PrecipitationAmount_7days_cm  ),
+    length = 1000
+  ))
+
+# not necessary, but nice to make sure it's using the right type
+d$yhat <- predict(m, newdata = d, type = "response")
+
+d <- cbind(d, trtools::glmint(m, newdata = d))
+
+head(d)
+
+ggplot(d, aes(x = PrecipitationAmount_7days_cm  , y = yhat)) +
+  geom_line(linewidth = 0.8, col = "lightsalmon4") + 
+  geom_ribbon(aes(ymin = low, ymax = upp), 
+              alpha = 0.4, color = NA, fill = "lightsalmon3", show.legend = FALSE) +
+  theme_classic() +
+  labs(x ="Precipitation Amount in Last 7 Days (cm)", 
+       y = "Probability of Pesticide Detection\nin Macroinvertebrates (%)") +
+  theme(axis.title.x = element_text(size = 21,
+                                    margin = margin(t = 12)),
+        axis.title.y = element_text(size = 21,
+                                    margin = margin(r = 12)),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        legend.position = "none") +
+  # geom_point(data = invert, aes(x = PrecipitationAmount_7days_cm  ,
+  #                                y = PesticideDetectionNum), size = 2) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 0.85),
+                     breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(expand = c(0,0), limits = c(0, 5.4))
+
+
+ggsave(filename = "Invert Pesticide Detection Results_2026-01-28.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
 

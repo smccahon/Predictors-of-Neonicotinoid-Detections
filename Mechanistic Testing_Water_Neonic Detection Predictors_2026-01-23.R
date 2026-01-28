@@ -22,7 +22,7 @@ library(AICcmodavg)
 #                        load data and organize datasets                    ----                        
 #------------------------------------------------------------------------------# 
 
-water <- read.csv("cleaned_data/wetland_data_cleaned_2025-09-30.csv")
+water <- read.csv("cleaned_data/wetland_data_cleaned_2026-01-28.csv")
 
 # theme for plotting
 my_theme <- theme_classic() + theme(
@@ -76,7 +76,7 @@ water <- water %>%
 
 # log transform precipitation amount due to skew
 water <- water %>% 
-  mutate(LogPrecipAmount = PrecipitationAmount_7days + 0.0001) %>% 
+  mutate(LogPrecipAmount = PrecipitationAmount_7days_cm + 0.0001) %>% 
   mutate(LogPrecipAmount = log(LogPrecipAmount))
 
 # log transform precipitation events due to skew
@@ -99,19 +99,19 @@ water.cs$Permanence <- relevel(water.cs$Permanence,
 #                         identify correlations                             ----                        
 #------------------------------------------------------------------------------# 
 
- #                               Var1                      Var2 Correlation
- # 27                          Julian                    Season  -0.9740772
- # 132                         Season                      SPEI   0.8481201
- # 131                         Julian                      SPEI  -0.7800471
- # 111                       Buffered     NearestCropDistance_m   0.7386995
- # 85                        Buffered                 PercentAg  -0.7344918
- # 83           NearestCropDistance_m                 PercentAg  -0.7133819
- # 443                         Julian                 WaterTemp   0.7117079
- # 444                         Season                 WaterTemp  -0.6756220
- # 638 DaysSinceLastPrecipitation_5mm           LogPrecipAmount  -0.6693172
- # 42                       Diversity                    Season  -0.6197850
- # 337                LogPrecipAmount PrecipitationAmount_7days   0.6137498
- # 101                LogCropDistance                 PercentAg  -0.6007487
+ #                               Var1                         Var2 Correlation
+ # 27                          Julian                       Season  -0.9740772
+ # 132                         Season                         SPEI   0.8481201
+ # 131                         Julian                         SPEI  -0.7800471
+ # 111                       Buffered        NearestCropDistance_m   0.7386995
+ # 85                        Buffered                    PercentAg  -0.7344918
+ # 83           NearestCropDistance_m                    PercentAg  -0.7133819
+ # 443                         Julian                    WaterTemp   0.7117079
+ # 444                         Season                    WaterTemp  -0.6756220
+ # 638 DaysSinceLastPrecipitation_5mm              LogPrecipAmount  -0.6693172
+ # 42                       Diversity                       Season  -0.6197850
+ # 337                LogPrecipAmount PrecipitationAmount_7days_cm   0.6137498
+ # 101                LogCropDistance                    PercentAg  -0.6007487
 
 #------------------------------------------------------------------------------#
 #                   identify best model for each hypothesis                 ----                        
@@ -239,16 +239,16 @@ m1 <- glm(WaterNeonicDetection ~ DaysSinceLastPrecipitation_5mm + Event,
           data = water.cs)
 
 # log transformation was not supported (wt = 0.46)
-m2 <- glm(WaterNeonicDetection ~ PrecipitationAmount_7days + Event,
+m2 <- glm(WaterNeonicDetection ~ PrecipitationAmount_7days_cm + Event,
           family = "binomial",
           data = water.cs)
 
 
-m3 <- glm(WaterNeonicDetection ~ AnnualSnowfall_in + Event,
+m3 <- glm(WaterNeonicDetection ~ AnnualSnowfall_cm + Event,
           family = "binomial",
           data = water.cs)
 
-m4 <- glm(WaterNeonicDetection ~ AnnualPrecipitation_in + Event,
+m4 <- glm(WaterNeonicDetection ~ AnnualPrecipitation_cm + Event,
           family = "binomial",
           data = water.cs)
 
@@ -264,7 +264,7 @@ aictab(models, modnames = model_names)
 # m1 5 91.97       1.05   0.19   0.83 -40.65
 # m2 5 92.24       1.32   0.17   1.00 -40.79
 
-m.precip <- glm(WaterNeonicDetection ~ AnnualPrecipitation_in + Event,
+m.precip <- glm(WaterNeonicDetection ~ AnnualPrecipitation_cm + Event,
                 family = "binomial",
                 data = water.cs)
 
@@ -277,7 +277,7 @@ testOutliers(simulationOutput)
 testQuantiles(simulationOutput) 
 
 plotResiduals(simulationOutput, form = 
-                model.frame(m.precip)$AnnualPrecipitation_in) # good
+                model.frame(m.precip)$AnnualPrecipitation_cm) # good
 
 plotResiduals(simulationOutput, form = 
                 model.frame(m.precip)$Event) # good
@@ -346,4 +346,87 @@ aictab(cand.set = models)
 #                             PLOT TOP MODEL(s)                             ----                        
 #------------------------------------------------------------------------------#
 
+### agriculture model ----
 
+# convert to factor to add points to figure
+water$NeonicDetectionNum <- ifelse(water$WaterNeonicDetection  == "Y", 
+                                       1, 0)
+
+# assign colors
+# cols <- c(
+#   "Fall 2021"   = "#A6761D",  
+#   "Fall 2023"   = "#EBDDC3", 
+#   "Spring 2023" = "#91BFE2", 
+#   "Spring 2022" = "#1B4F72"  
+# )
+
+cols <- c(
+"Fall 2021"   = "#875907",  
+"Fall 2023"   = "#FADBA4", 
+"Spring 2023" = "#98CCF0", 
+"Spring 2022" = "#0D3957"  
+)
+
+
+m <- glm(WaterNeonicDetection ~ LogCropDistance + Event,
+         family = "binomial",
+         data = water)
+
+d <- expand.grid(
+  LogCropDistance = seq(
+    min(water$LogCropDistance),
+    max(water$LogCropDistance),
+    length = 1000),
+  Event = unique(water$Event))
+
+# not necessary, but nice to make sure it's using the right type
+d$yhat <- predict(m, newdata = d, type = "response")
+
+d <- cbind(d, trtools::glmint(m, newdata = d))
+
+head(d)
+
+ggplot(d, aes(x = LogCropDistance, y = yhat, 
+              color = Event, fill = Event)) +
+  geom_line(linewidth = 1.2) + 
+  geom_ribbon(aes(ymin = low, ymax = upp), 
+              alpha = 0.4, color = NA) +
+  facet_wrap(~Event) +
+  theme_classic() +
+  labs(x ="Log(Distance to Nearest Crop)", 
+       y = "Probability of Neonicotinoid Detection\nin Water (%)") +
+  theme(strip.text = element_text(face = "bold", color = "black",
+                                  hjust = 0.5, size = 15),
+        strip.background = element_rect(fill = "lightgrey", 
+                                        linetype = "solid",
+                                        color = "black", linewidth = 0.5),
+        panel.spacing = unit(20, 'points'),
+        panel.border = element_rect(fill = "transparent",
+                                    color = "black", linewidth = 0.5),
+        axis.title.x = element_text(size = 21,
+                                    margin = margin(t = 12)),
+        axis.title.y = element_text(size = 21,
+                                    margin = margin(r = 12)),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        legend.position = "none") +
+  # geom_point(data = water, aes(x = LogCropDistance,
+  #                                y = PesticideDetectionNum), size = 2) +
+  scale_y_continuous(expand = c(0,0), 
+                     limits = c(0,1),
+                     breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(expand = c(0,0), 
+                     limits = c(-10,7.8)) +
+  scale_color_manual(values = cols) +
+  scale_fill_manual(values = cols)
+
+
+
+
+
+
+# save high res figure
+ggsave(filename = "Water Neonic Detection Results_2026-01-28.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)

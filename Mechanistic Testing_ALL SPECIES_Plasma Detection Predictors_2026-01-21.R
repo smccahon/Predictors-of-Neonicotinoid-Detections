@@ -2,7 +2,7 @@
 # Predictors of Neonics in Plasma #
 #   Analysis by Shelby McCahon    #
 #      Created: 2026-01-21        #
-#     Modified: 2026-01-22        #
+#     Modified: 2026-01-28        #
 #---------------------------------#
 
 # load packages
@@ -70,7 +70,7 @@ birds <- birds %>%
 
 # log transform precipitation amount due to right skew
 birds <- birds %>% 
-  mutate(LogPrecipAmount = PrecipitationAmount_7days + 0.0001) %>% 
+  mutate(LogPrecipAmount = PrecipitationAmount_7days_cm + 0.0001) %>% 
   mutate(LogPrecipAmount = log(LogPrecipAmount))
 
 # log transform precipitation event due to right skew
@@ -223,7 +223,7 @@ m1 <- glm(PlasmaDetection ~ DaysSinceLastPrecipitation_5mm + Event,
 # (detections are influenced by recent precipitation amount)
 # Mechanism: More precipitation runoff from the amount of precipitation
 # log transformation does not improve fit (wt = 0.46)
-m2 <- glm(PlasmaDetection ~ PrecipitationAmount_7days + Event,
+m2 <- glm(PlasmaDetection ~ PrecipitationAmount_7days_cm + Event,
           family = "binomial",
           data = birds.cs)
 
@@ -231,7 +231,7 @@ m2 <- glm(PlasmaDetection ~ PrecipitationAmount_7days + Event,
 # (detections are influenced by annual snowfall levels)
 # Mechanism: Snowfall influences seasonal water availability and snowmelt 
 # is known to transport neonics into wetlands
-m3 <- glm(PlasmaDetection ~ AnnualSnowfall_in + Event,
+m3 <- glm(PlasmaDetection ~ AnnualSnowfall_cm + Event,
           family = "binomial",
           data = birds.cs)
 
@@ -239,7 +239,7 @@ m3 <- glm(PlasmaDetection ~ AnnualSnowfall_in + Event,
 # (detections are influenced by annual levels of precipitation)
 # Mechanism: Annual levels of precipitation influence cumulative neonic
 # exposure and transport into wetlands
-m4 <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Event,
+m4 <- glm(PlasmaDetection ~ AnnualPrecipitation_cm + Event,
           family = "binomial",
           data = birds.cs)
 
@@ -256,12 +256,12 @@ aictab(models, modnames = model_names)
 # m3 5 168.35       1.85   0.14   1.00 -78.99
 
 # does including both m1 and m4 improve fit? no
-# m1 <- glm(PlasmaDetection ~ AnnualPrecipitation_in + 
+# m1 <- glm(PlasmaDetection ~ AnnualPrecipitation_cm + 
 #             DaysSinceLastPrecipitation_5mm + Event,
 #           family = "binomial",
 #           data = birds.cs)
 # 
-# m2 <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Event,
+# m2 <- glm(PlasmaDetection ~ AnnualPrecipitation_cm + Event,
 #           family = "binomial",
 #           data = birds.cs)
 # 
@@ -269,7 +269,7 @@ aictab(models, modnames = model_names)
 # models <- mget(model_names)
 # aictab(models, modnames = model_names)
 
-m.precip <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Event,
+m.precip <- glm(PlasmaDetection ~ AnnualPrecipitation_cm + Event,
             family = "binomial",
             data = birds.cs)
 
@@ -284,7 +284,7 @@ testOutliers(simulationOutput)
 testQuantiles(simulationOutput) 
 
 plotResiduals(simulationOutput, form = model.frame(m.precip)$EnvDetection) # good
-plotResiduals(simulationOutput, form = model.frame(m.precip)$AnnualPrecipitation_in) # good
+plotResiduals(simulationOutput, form = model.frame(m.precip)$AnnualPrecipitation_cm) # good
 
 #------------------------------------------------------------------------------#
 
@@ -641,3 +641,150 @@ ggsave(filename = "Model-averaged Plasma Neonic Results_2026-01-22.tiff",
 #                             PLOT TOP MODEL(s)                             ----                        
 #------------------------------------------------------------------------------#
 
+### ...agriculture model ----
+# convert to factor to add points to figure
+birds$PlasmaDetectionNum <- ifelse(birds$PlasmaDetection  == "Y", 
+                                   1, 0)
+
+# add colors
+cols <- c(
+  "Fall 2021"   = "#875907",  
+  "Fall 2023"   = "#FADBA4", 
+  "Spring 2023" = "#98CCF0", 
+  "Spring 2022" = "#0D3957"  
+)
+
+
+m <- glm(PlasmaDetection ~ LogCropDistance + Event,
+         family = "binomial",
+         data = birds)
+
+d <- expand.grid(
+  LogCropDistance = seq(
+    min(birds$LogCropDistance),
+    max(birds$LogCropDistance),
+    length = 1000),
+  Event = unique(birds$Event))
+
+# not necessary, but nice to make sure it's using the right type
+d$yhat <- predict(m, newdata = d, type = "response")
+
+d <- cbind(d, trtools::glmint(m, newdata = d))
+
+head(d)
+
+ggplot(d, aes(x = LogCropDistance, y = yhat, 
+              color = Event, fill = Event)) +
+  geom_line(linewidth = 1.2) + 
+  geom_ribbon(aes(ymin = low, ymax = upp), 
+              alpha = 0.4, color = NA) +
+  facet_wrap(~Event) +
+  theme_classic() +
+  labs(x ="Log(Distance to Nearest Crop)", 
+       y = "Probability of Neonicotinoid Detection\nin Shorebird Plasma (%)") +
+  theme(strip.text = element_text(face = "bold", color = "black",
+                                  hjust = 0.5, size = 15),
+        strip.background = element_rect(fill = "lightgrey", 
+                                        linetype = "solid",
+                                        color = "black", linewidth = 0.5),
+        panel.spacing = unit(20, 'points'),
+        panel.border = element_rect(fill = "transparent",
+                                    color = "black", linewidth = 0.5),
+        axis.title.x = element_text(size = 21,
+                                    margin = margin(t = 12)),
+        axis.title.y = element_text(size = 21,
+                                    margin = margin(r = 12)),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        legend.position = "none") +
+  # geom_point(data = birds, aes(x = LogCropDistance,
+  #                                y = PlasmaDetection), size = 2) +
+  scale_y_continuous(expand = c(0,0), 
+                     limits = c(0,1),
+                     breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(expand = c(0,0), 
+                     limits = c(-10,8.2)) +
+  scale_color_manual(values = cols) +
+  scale_fill_manual(values = cols)
+
+# save high res figure
+ggsave(filename = "ALL SPECIES AGRICULTURE Plasma Neonic Detection Results_2026-01-28.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
+
+
+#------------------------------------------------------------------------------#
+
+
+### ...hydrology model ----
+# convert to factor to add points to figure
+birds$PlasmaDetectionNum <- ifelse(birds$PlasmaDetection  == "Y", 
+                                   1, 0)
+
+# add colors
+cols <- c(
+  "Fall 2021"   = "#875907",  
+  "Fall 2023"   = "#FADBA4", 
+  "Spring 2023" = "#98CCF0", 
+  "Spring 2022" = "#0D3957"  
+)
+
+
+m <- glm(PlasmaDetection ~ Dist_Closest_Wetland_m + Event,
+         family = "binomial",
+         data = birds)
+
+d <- expand.grid(
+  Dist_Closest_Wetland_m = seq(
+    min(birds$Dist_Closest_Wetland_m),
+    max(birds$Dist_Closest_Wetland_m),
+    length = 1000),
+  Event = unique(birds$Event))
+
+# not necessary, but nice to make sure it's using the right type
+d$yhat <- predict(m, newdata = d, type = "response")
+
+d <- cbind(d, trtools::glmint(m, newdata = d))
+
+head(d)
+
+ggplot(d, aes(x = Dist_Closest_Wetland_m, y = yhat, 
+              color = Event, fill = Event)) +
+  geom_line(linewidth = 1.2) + 
+  geom_ribbon(aes(ymin = low, ymax = upp), 
+              alpha = 0.4, color = NA) +
+  facet_wrap(~Event) +
+  theme_classic() +
+  labs(x ="Distance to Nearest Wetland", 
+       y = "Probability of Neonicotinoid Detection\nin Shorebird Plasma (%)") +
+  theme(strip.text = element_text(face = "bold", color = "black",
+                                  hjust = 0.5, size = 15),
+        strip.background = element_rect(fill = "lightgrey", 
+                                        linetype = "solid",
+                                        color = "black", linewidth = 0.5),
+        panel.spacing = unit(20, 'points'),
+        panel.border = element_rect(fill = "transparent",
+                                    color = "black", linewidth = 0.5),
+        axis.title.x = element_text(size = 21,
+                                    margin = margin(t = 12)),
+        axis.title.y = element_text(size = 21,
+                                    margin = margin(r = 12)),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        legend.position = "none") +
+  # geom_point(data = birds, aes(x = LogCropDistance,
+  #                                y = PlasmaDetection), size = 2) +
+  scale_y_continuous(expand = c(0,0), 
+                     limits = c(0,1),
+                     breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(expand = c(0,0), 
+                     limits = c(0,410)) +
+  scale_color_manual(values = cols) +
+  scale_fill_manual(values = cols)
+
+# save high res figure
+ggsave(filename = "ALL SPECIES HYDROLOGY Plasma Neonic Detection Results_2026-01-28.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
