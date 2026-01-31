@@ -15,6 +15,7 @@ library(lattice)
 library(dplyr)
 library(tidyr)
 library(lme4)
+library(trtools)
 
 # ANALYSIS NOTES:
 # Event is included in every model due to strong temporal influence
@@ -673,15 +674,15 @@ d <- cbind(d, trtools::glmint(m, newdata = d))
 
 head(d)
 
-ggplot(d, aes(x = LogCropDistance, y = yhat, 
-              color = Event, fill = Event)) +
-  geom_line(linewidth = 1.2) + 
+# color by xaxis variable
+ggplot(d, aes(x = LogCropDistance, y = yhat)) +
+  geom_line(linewidth = 1.2, col = "goldenrod3") + 
   geom_ribbon(aes(ymin = low, ymax = upp), 
-              alpha = 0.4, color = NA) +
+              alpha = 0.4, color = NA, fill = "goldenrod3", show.legend = FALSE) +
   facet_wrap(~Event) +
   theme_classic() +
   labs(x ="Log(Distance to Nearest Crop)", 
-       y = "Probability of Neonicotinoid Detection\nin Shorebird Plasma (%)") +
+       y = "Probability of Neonicotinoid Detection in Plasma\nAcross All Species (%)") +
   theme(strip.text = element_text(face = "bold", color = "black",
                                   hjust = 0.5, size = 15),
         strip.background = element_rect(fill = "lightgrey", 
@@ -704,9 +705,43 @@ ggplot(d, aes(x = LogCropDistance, y = yhat,
                      breaks = c(0, 0.25, 0.5, 0.75, 1.00),
                      labels = scales::percent_format(accuracy = 1)) +
   scale_x_continuous(expand = c(0,0), 
-                     limits = c(-10,8.2)) +
-  scale_color_manual(values = cols) +
-  scale_fill_manual(values = cols)
+                     limits = c(-10,8.2))
+
+# color coded by event
+# ggplot(d, aes(x = LogCropDistance, y = yhat, 
+#               color = Event, fill = Event)) +
+#   geom_line(linewidth = 1.2) + 
+#   geom_ribbon(aes(ymin = low, ymax = upp), 
+#               alpha = 0.4, color = NA) +
+#   facet_wrap(~Event) +
+#   theme_classic() +
+#   labs(x ="Log(Distance to Nearest Crop)", 
+#        y = "Probability of Neonicotinoid Detection in Plasma\nAcross All Species (%)") +
+#   theme(strip.text = element_text(face = "bold", color = "black",
+#                                   hjust = 0.5, size = 15),
+#         strip.background = element_rect(fill = "lightgrey", 
+#                                         linetype = "solid",
+#                                         color = "black", linewidth = 0.5),
+#         panel.spacing = unit(20, 'points'),
+#         panel.border = element_rect(fill = "transparent",
+#                                     color = "black", linewidth = 0.5),
+#         axis.title.x = element_text(size = 21,
+#                                     margin = margin(t = 12)),
+#         axis.title.y = element_text(size = 21,
+#                                     margin = margin(r = 12)),
+#         axis.text.x = element_text(size = 18),
+#         axis.text.y = element_text(size = 18),
+#         legend.position = "none") +
+#   # geom_point(data = birds, aes(x = LogCropDistance,
+#   #                                y = PlasmaDetection), size = 2) +
+#   scale_y_continuous(expand = c(0,0), 
+#                      limits = c(0,1),
+#                      breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+#                      labels = scales::percent_format(accuracy = 1)) +
+#   scale_x_continuous(expand = c(0,0), 
+#                      limits = c(-10,8.2)) +
+#   scale_color_manual(values = cols) +
+#   scale_fill_manual(values = cols)
 
 # save high res figure
 ggsave(filename = "ALL SPECIES AGRICULTURE Plasma Neonic Detection Results_2026-01-28.tiff",
@@ -749,15 +784,16 @@ d <- cbind(d, trtools::glmint(m, newdata = d))
 
 head(d)
 
-ggplot(d, aes(x = Dist_Closest_Wetland_m, y = yhat, 
-              color = Event, fill = Event)) +
-  geom_line(linewidth = 1.2) + 
+
+# color by xaxis variable
+ggplot(d, aes(x = Dist_Closest_Wetland_m, y = yhat)) +
+  geom_line(linewidth = 1.2, col = "plum") + 
   geom_ribbon(aes(ymin = low, ymax = upp), 
-              alpha = 0.4, color = NA) +
+              alpha = 0.4, color = NA, fill = "plum", show.legend = FALSE) +
   facet_wrap(~Event) +
   theme_classic() +
-  labs(x ="Distance to Nearest Wetland", 
-       y = "Probability of Neonicotinoid Detection\nin Shorebird Plasma (%)") +
+  labs(x ="Distance to Nearest Wetland (m)", 
+       y = "Probability of Neonicotinoid Detection in Plasma\nAcross All Species (%)") +
   theme(strip.text = element_text(face = "bold", color = "black",
                                   hjust = 0.5, size = 15),
         strip.background = element_rect(fill = "lightgrey", 
@@ -780,9 +816,43 @@ ggplot(d, aes(x = Dist_Closest_Wetland_m, y = yhat,
                      breaks = c(0, 0.25, 0.5, 0.75, 1.00),
                      labels = scales::percent_format(accuracy = 1)) +
   scale_x_continuous(expand = c(0,0), 
-                     limits = c(0,410)) +
-  scale_color_manual(values = cols) +
-  scale_fill_manual(values = cols)
+                     limits = c(0,410))
+
+# color by event
+# ggplot(d, aes(x = Dist_Closest_Wetland_m, y = yhat, 
+#               color = Event, fill = Event)) +
+#   geom_line(linewidth = 1.2) + 
+#   geom_ribbon(aes(ymin = low, ymax = upp), 
+#               alpha = 0.4, color = NA) +
+#   facet_wrap(~Event) +
+#   theme_classic() +
+#   labs(x ="Distance to Nearest Wetland (m)", 
+#        y = "Probability of Neonicotinoid Detection in Plasma\nAcross All Species (%)") +
+#   theme(strip.text = element_text(face = "bold", color = "black",
+#                                   hjust = 0.5, size = 15),
+#         strip.background = element_rect(fill = "lightgrey", 
+#                                         linetype = "solid",
+#                                         color = "black", linewidth = 0.5),
+#         panel.spacing = unit(20, 'points'),
+#         panel.border = element_rect(fill = "transparent",
+#                                     color = "black", linewidth = 0.5),
+#         axis.title.x = element_text(size = 21,
+#                                     margin = margin(t = 12)),
+#         axis.title.y = element_text(size = 21,
+#                                     margin = margin(r = 12)),
+#         axis.text.x = element_text(size = 18),
+#         axis.text.y = element_text(size = 18),
+#         legend.position = "none") +
+#   # geom_point(data = birds, aes(x = LogCropDistance,
+#   #                                y = PlasmaDetection), size = 2) +
+#   scale_y_continuous(expand = c(0,0), 
+#                      limits = c(0,1),
+#                      breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+#                      labels = scales::percent_format(accuracy = 1)) +
+#   scale_x_continuous(expand = c(0,0), 
+#                      limits = c(0,410)) +
+#   scale_color_manual(values = cols) +
+#   scale_fill_manual(values = cols)
 
 # save high res figure
 ggsave(filename = "ALL SPECIES HYDROLOGY Plasma Neonic Detection Results_2026-01-28.tiff",

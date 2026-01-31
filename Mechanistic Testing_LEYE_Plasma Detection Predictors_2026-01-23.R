@@ -2,7 +2,7 @@
 # Predictors of Neonics in Lesser Yellowlegs Plasma #
 #           Analysis by Shelby McCahon              #
 #              Created: 2026-01-23                  #
-#             Modified: 2026-01-23                  #
+#             Modified: 2026-01-29                  #
 #---------------------------------------------------#
 
 # load packages
@@ -11,6 +11,7 @@ library(MuMIn)
 library(glmmTMB)
 library(DHARMa)
 library(AICcmodavg)
+library(trtools)
 
 # DETAILS OF ANALYSIS
 # STAGE I: Identify the best predictors within each hypothesis
@@ -73,7 +74,7 @@ leye <- leye %>%
 
 # log transform precipitation amount due to right skew
 leye <- leye %>% 
-  mutate(LogPrecipAmount = PrecipitationAmount_7days + 0.0001) %>% 
+  mutate(LogPrecipAmount = PrecipitationAmount_7days_cm + 0.0001) %>% 
   mutate(LogPrecipAmount = log(LogPrecipAmount))
 
 # log transform precipitation event due to right skew
@@ -98,15 +99,15 @@ leye.cs$Permanence <- relevel(leye.cs$Permanence,
  
  #                               Var1                      Var2 Correlation
  # 11                          Julian                    Season  -0.9383480
- # 464         AnnualPrecipitation_in                      SPEI   0.8821235
- # 782 DaysSinceLastPrecipitation_5mm PrecipitationAmount_7days  -0.8493425
+ # 464         AnnualPrecipitation_cm                      SPEI   0.8821235
+ # 782 DaysSinceLastPrecipitation_5mm PrecipitationAmount_7days_cm  -0.8493425
  # 436                         Season                      SPEI   0.7339089
- # 29          AnnualPrecipitation_in                    Season   0.7277824
- # 461              AnnualSnowfall_in                      SPEI   0.7013480
+ # 29          AnnualPrecipitation_cm                    Season   0.7277824
+ # 461              AnnualSnowfall_cm                      SPEI   0.7013480
  # 608 DaysSinceLastPrecipitation_5mm    Dist_Closest_Wetland_m   0.6669624
  # 238          NearestCropDistance_m                 PercentAg  -0.6621564
- # 754         AnnualPrecipitation_in         AnnualSnowfall_in   0.6449298
- # 775         Dist_Closest_Wetland_m PrecipitationAmount_7days  -0.6136009
+ # 754         AnnualPrecipitation_cm         AnnualSnowfall_cm   0.6449298
+ # 775         Dist_Closest_Wetland_m PrecipitationAmount_7days_cm  -0.6136009
 
 #------------------------------------------------------------------------------#
 #               STAGE I: identify best model for each hypothesis            ----                        
@@ -118,8 +119,9 @@ m1 <- glm(PlasmaDetection ~ PercentAg + Julian,
           data = leye.cs,
           family = "binomial")
 
-# log transformation does not improve fit (wt. = 0.48)
-m2 <- glm(PlasmaDetection ~ NearestCropDistance_m + Julian, 
+# log transformation does not improve fit (wt. = 0.48), but skew is very
+# significant, so I decided to keep it
+m2 <- glm(PlasmaDetection ~ LogCropDistance + Julian, 
           data = leye.cs,
           family = "binomial")
 
@@ -127,7 +129,7 @@ m3 <- glm(PlasmaDetection ~ DominantCrop + Julian,
           data = leye.cs,
           family = "binomial")
 
-m4 <- glm(PlasmaDetection ~ PercentAg + NearestCropDistance_m + Julian, 
+m4 <- glm(PlasmaDetection ~ PercentAg + LogCropDistance + Julian, 
           data = leye.cs,
           family = "binomial")
 
@@ -138,14 +140,14 @@ aictab(models, modnames = model_names)
 # Model selection based on AICc:
 #   
 #    K  AICc Delta_AICc AICcWt Cum.Wt     LL
-# m2 3 53.71       0.00   0.33   0.33 -23.62
-# m1 3 53.74       0.03   0.33   0.66 -23.63
-# m3 4 54.79       1.07   0.20   0.86 -22.99
-# m4 4 55.46       1.75   0.14   1.00 -23.32
+# m1 3 53.74       0.00   0.32   0.32 -23.63
+# m2 3 53.85       0.11   0.30   0.62 -23.69
+# m3 4 54.79       1.04   0.19   0.81 -22.99
+# m4 4 54.83       1.08   0.19   1.00 -23.00
 
 
 # final candidate model
-m.ag <- glm(PlasmaDetection ~ NearestCropDistance_m + Julian,
+m.ag <- glm(PlasmaDetection ~ PercentAg + Julian,
             family = "binomial",
             data = leye.cs)
 
@@ -198,11 +200,11 @@ m2 <- glm(PlasmaDetection ~ LogPrecipAmount + Julian,
           family = "binomial",
           data = leye.cs)
 
-m3 <- glm(PlasmaDetection ~ AnnualSnowfall_in + Julian,
+m3 <- glm(PlasmaDetection ~ AnnualSnowfall_cm + Julian,
           family = "binomial",
           data = leye.cs)
 
-m4 <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Julian,
+m4 <- glm(PlasmaDetection ~ AnnualPrecipitation_cm + Julian,
           family = "binomial",
           data = leye.cs)
 
@@ -210,7 +212,7 @@ model_names <- paste0("m", 1:4)
 models <- mget(model_names)
 aictab(models, modnames = model_names)
 
-m.precip <- glm(PlasmaDetection ~ AnnualPrecipitation_in + Julian,
+m.precip <- glm(PlasmaDetection ~ AnnualPrecipitation_cm + Julian,
           family = "binomial",
           data = leye.cs)
 
@@ -225,7 +227,7 @@ testOutliers(simulationOutput)
 testQuantiles(simulationOutput) 
 
 plotResiduals(simulationOutput, form = model.frame(m.precip)$Julian)  # some pattern
-plotResiduals(simulationOutput, form = model.frame(m.precip)$AnnualPreciptiation_in)  # some pattern
+plotResiduals(simulationOutput, form = model.frame(m.precip)$AnnualPreciptiation_cm)  # some pattern
 
 #------------------------------------------------------------------------------#
 
@@ -299,12 +301,13 @@ m2 <- glm(PlasmaDetection ~ Porosity + Julian,
           family = "binomial",
           data = leye.cs)
 
-# log transformation not needed (wt = 0.48)
-m3 <- glm(PlasmaDetection ~ Dist_Closest_Wetland_m + Julian,
+# log transformation not needed (wt = 0.48), but decided to keep it because
+# right skew is significant
+m3 <- glm(PlasmaDetection ~ LogWetlandDistance + Julian,
           family = "binomial",
           data=leye.cs)
 
-m4 <- glm(PlasmaDetection ~ Permanence + Dist_Closest_Wetland_m + Julian,
+m4 <- glm(PlasmaDetection ~ Permanence + LogWetlandDistance + Julian,
           family = "binomial",
           data=leye.cs)
 
@@ -315,12 +318,12 @@ aictab(models, modnames = model_names)
 # Model selection based on AICc:
 #   
 #    K  AICc Delta_AICc AICcWt Cum.Wt     LL
-# m3 3 55.46       0.00   0.42   0.42 -24.49
-# m1 4 56.26       0.79   0.28   0.70 -23.72
-# m2 3 57.06       1.60   0.19   0.89 -25.29
-# m4 5 58.22       2.76   0.11   1.00 -23.49
+# m3 3 55.78       0.00   0.39   0.39 -24.65
+# m1 4 56.26       0.47   0.30   0.69 -23.72
+# m2 3 57.06       1.28   0.20   0.89 -25.29
+# m4 5 58.35       2.57   0.11   1.00 -23.55
 
-m.hydrology <- glm(PlasmaDetection ~ Dist_Closest_Wetland_m + Julian,
+m.hydrology <- glm(PlasmaDetection ~ LogWetlandDistance + Julian,
                   family = "binomial",
                   data=leye.cs)
 
@@ -391,13 +394,207 @@ aictab(cand.set = models)
 # Model selection based on AICc:
 #   
 #             K  AICc Delta_AICc AICcWt Cum.Wt     LL
-# Agriculture 3 53.71       0.00   0.26   0.26 -23.62
-# Pesticide   3 53.90       0.19   0.24   0.49 -23.71
-# Time        2 54.83       1.12   0.15   0.64 -25.30
-# Hydrology   3 55.46       1.75   0.11   0.75 -24.49
-# Precip      3 55.55       1.84   0.10   0.85 -24.54
-# Drought     3 56.13       2.41   0.08   0.93 -24.82
-# LifeHistory 3 56.38       2.66   0.07   1.00 -24.95
+# Agriculture 3 53.74       0.00   0.26   0.26 -23.63
+# Pesticide   3 53.90       0.16   0.24   0.50 -23.71
+# Time        2 54.83       1.09   0.15   0.65 -25.30
+# Precip      3 55.55       1.81   0.11   0.76 -24.54
+# Hydrology   3 55.78       2.04   0.09   0.85 -24.65
+# Drought     3 56.13       2.38   0.08   0.93 -24.82
+# LifeHistory 3 56.38       2.63   0.07   1.00 -24.95
 
 confint(m.ag)
 summary(m.ag) # marginal
+
+#------------------------------------------------------------------------------#
+#                             PLOT TOP MODEL(s)                             ----                        
+#------------------------------------------------------------------------------#
+
+### ...agriculture model ----
+# convert to factor to add points to figure
+leye$PlasmaDetectionNum <- ifelse(leye$PlasmaDetection  == "Y", 
+                                   1, 0)
+
+m <- glm(PlasmaDetection ~ PercentAg + Julian,
+         family = "binomial",
+         data = leye)
+
+d <- expand.grid(
+  PercentAg = seq(
+    min(leye$PercentAg),
+    max(leye$PercentAg),
+    length = 1000),
+  Julian = mean(leye$Julian))
+
+# not necessary, but nice to make sure it's using the right type
+d$yhat <- predict(m, newdata = d, type = "response")
+
+d <- cbind(d, trtools::glmint(m, newdata = d))
+
+head(d)
+
+ggplot(d, aes(x = PercentAg, y = yhat)) +
+  # geom_line(linewidth = 1.2, col = "lightsalmon4") + 
+  geom_line(linewidth = 1.2, col = "goldenrod3") + 
+  geom_ribbon(aes(ymin = low, ymax = upp), 
+              alpha = 0.4, color = NA, fill = "goldenrod3", show.legend = FALSE) +
+  # geom_ribbon(aes(ymin = low, ymax = upp), 
+  #             alpha = 0.4, color = NA, fill = "lightsalmon3", show.legend = FALSE) +
+  theme_classic() +
+  labs(x ="Surrounding Cropland Cover (%)", 
+       y = "Probability of Neonicotinoid Detection\n in Lesser Yellowlegs Plasma (%)") +
+  theme(axis.title.x = element_text(size = 21,
+                                    margin = margin(t = 12)),
+        axis.title.y = element_text(size = 21,
+                                    margin = margin(r = 12)),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        legend.position = "none") +
+  # geom_point(data = leye, aes(x = LogCropDistance,
+  #                                y = PlasmaDetection), size = 2) +
+  scale_y_continuous(expand = c(0,0), 
+                     limits = c(0,1.05),
+                     breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(expand = c(0,0), 
+                     limits = c(0,85))
+
+# save high res figure
+ggsave(filename = "LEYE AGRICULTURE Plasma Neonic Detection Results_2026-01-29.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
+
+#------------------------------------------------------------------------------#
+
+### ...pesticide exposure model ----
+
+leye$EnvDetection <- factor(leye$EnvDetection,
+                            levels = c("Y","N"),
+                            labels = c("Pesticide Detection in Wetland",
+                                       "No Pesticide Detection in Wetland"))
+
+# add colors
+cols <- c(
+  "Pesticide Detection in Wetland"   = "darkorange3",  
+  "No Pesticide Detection in Wetland"   = "darkgreen")
+
+# Convert Julian to months
+month_starts <- as.Date(paste0("2023-", 1:12, "-01"))  # Non-leap year example
+julian_breaks <- as.numeric(format(month_starts, "%j"))  
+month_labels <- format(month_starts, "%B") # use %b for first three letters
+month_labels[month_labels == "September"] <- "Sept."
+
+m <- glm(PlasmaDetection ~ EnvDetection + Julian,
+         family = "binomial",
+         data = leye)
+
+d <- expand.grid(
+  Julian = seq(
+    min(leye$Julian),
+    max(leye$Julian),
+    length = 1000),
+  EnvDetection = unique(leye$EnvDetection))
+
+d$yhat <- predict(m, newdata = d, type = "response")
+
+d <- cbind(d, trtools::glmint(m, newdata = d))
+
+head(d)
+
+ggplot(d, aes(x = Julian, y = yhat,
+              color = EnvDetection, fill = EnvDetection)) +
+  geom_line(linewidth = 1.2) + 
+  geom_ribbon(aes(ymin = low, ymax = upp), 
+              alpha = 0.3, color = NA) +
+  # facet_wrap(~EnvDetection) +
+  theme_classic() +
+  labs(x ="Month", 
+       y = "Probability of Neonicotinoid Detection\n in Lesser Yellowlegs Plasma (%)") +
+  theme(
+        # strip.text = element_text(face = "bold", color = "black",
+        #                           hjust = 0.5, size = 15),
+        # strip.background = element_rect(fill = "lightgrey", 
+        #                                 linetype = "solid",
+        #                                 color = "black", linewidth = 0.5),
+        # panel.spacing = unit(20, 'points'),
+        # panel.border = element_rect(fill = "transparent",
+        #                             color = "black", linewidth = 0.5),
+        axis.title.x = element_text(size = 21,
+                                    margin = margin(t = 12)),
+        axis.title.y = element_text(size = 21,
+                                    margin = margin(r = 12)),
+        axis.text.x = element_text(size = 18),
+        axis.text.y = element_text(size = 18),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank(),
+        legend.position = "top") +
+  # geom_point(data = leye, aes(x = LogCropDistance,
+  #                                y = PlasmaDetection), size = 2) +
+  scale_y_continuous(expand = c(0,0), 
+                     limits = c(0,1.05),
+                     breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = julian_breaks, labels = month_labels) +
+  scale_color_manual(values = cols) +
+  scale_fill_manual(values = cols)
+
+# save high res figure
+ggsave(filename = "LEYE ENVDETECTION + JULIAN Plasma Neonic Detection Results_2026-01-29.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
+
+
+#------------------------------------------------------------------------------#
+
+### ...Julian model ----
+
+# Convert Julian to months
+month_starts <- as.Date(paste0("2023-", 1:12, "-01"))  # Non-leap year example
+julian_breaks <- as.numeric(format(month_starts, "%j"))  
+month_labels <- format(month_starts, "%B") # use %b for first three letters
+month_labels[month_labels == "September"] <- "Sept."
+
+m <- glm(PlasmaDetection ~ Julian,
+         family = "binomial",
+         data = leye)
+
+d <- expand.grid(
+  Julian = seq(
+    min(leye$Julian),
+    max(leye$Julian),
+    length = 1000))
+
+d$yhat <- predict(m, newdata = d, type = "response")
+
+d <- cbind(d, trtools::glmint(m, newdata = d))
+
+head(d)
+
+ggplot(d, aes(x = Julian, y = yhat)) +
+  # geom_line(linewidth = 1.2, col = "firebrick") + 
+  geom_line(linewidth = 1.2, col = "#B5BC8F") +
+  geom_ribbon(aes(ymin = low, ymax = upp), fill = "#B5BC8F", 
+              alpha = 0.4, color = NA) +
+  # geom_ribbon(aes(ymin = low, ymax = upp), fill = "firebrick", 
+  #             alpha = 0.4, color = NA) +
+  theme_classic() +
+  labs(x ="Month", 
+       y = "Probability of Neonicotinoid Detection\n in Lesser Yellowlegs Plasma (%)") +
+  theme(
+    axis.title.x = element_text(size = 21,
+                                margin = margin(t = 12)),
+    axis.title.y = element_text(size = 21,
+                                margin = margin(r = 12)),
+    axis.text.x = element_text(size = 18),
+    axis.text.y = element_text(size = 18),
+    legend.position = "none") +
+  scale_y_continuous(expand = c(0,0), 
+                     limits = c(0,1.05),
+                     breaks = c(0, 0.25, 0.5, 0.75, 1.00),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = julian_breaks, labels = month_labels)
+
+# save high res figure
+ggsave(filename = "LEYE JULIAN Plasma Neonic Detection Results_2026-01-29.tiff",
+       path = "C:/Users/shelb/OneDrive - University of Idaho/Masters Project/Analysis/Predictors of Neonics/figures", 
+       width = 13, height = 8, units = "in", device='tiff', dpi=300)
+

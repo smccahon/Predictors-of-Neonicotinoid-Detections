@@ -365,8 +365,8 @@ m <- glm(InvertPesticideDetection ~ PrecipitationAmount_7days_cm  ,
 
 d <- expand.grid(
   PrecipitationAmount_7days_cm   = seq(
-    min(invert$PrecipitationAmount_7days_cm  ),
-    max(invert$PrecipitationAmount_7days_cm  ),
+    min(invert$PrecipitationAmount_7days_cm),
+    max(invert$PrecipitationAmount_7days_cm),
     length = 1000
   ))
 
@@ -377,10 +377,13 @@ d <- cbind(d, trtools::glmint(m, newdata = d))
 
 head(d)
 
-ggplot(d, aes(x = PrecipitationAmount_7days_cm  , y = yhat)) +
-  geom_line(linewidth = 0.8, col = "lightsalmon4") + 
+ggplot(d, aes(x = PrecipitationAmount_7days_cm, y = yhat)) +
+  # geom_line(linewidth = 1.2, col = "peachpuff4") + 
+  # geom_ribbon(aes(ymin = low, ymax = upp), 
+  #             alpha = 0.4, color = NA, fill = "peachpuff4", show.legend = FALSE) +
+  geom_line(linewidth = 1.2, col = "skyblue3") + 
   geom_ribbon(aes(ymin = low, ymax = upp), 
-              alpha = 0.4, color = NA, fill = "lightsalmon3", show.legend = FALSE) +
+              alpha = 0.4, color = NA, fill = "skyblue3", show.legend = FALSE) +
   theme_classic() +
   labs(x ="Precipitation Amount in Last 7 Days (cm)", 
        y = "Probability of Pesticide Detection\nin Macroinvertebrates (%)") +
@@ -393,7 +396,7 @@ ggplot(d, aes(x = PrecipitationAmount_7days_cm  , y = yhat)) +
         legend.position = "none") +
   # geom_point(data = invert, aes(x = PrecipitationAmount_7days_cm  ,
   #                                y = PesticideDetectionNum), size = 2) +
-  scale_y_continuous(expand = c(0,0), limits = c(0, 0.85),
+  scale_y_continuous(expand = c(0,0), limits = c(0, 1.05),
                      breaks = c(0, 0.25, 0.5, 0.75, 1.00),
                      labels = scales::percent_format(accuracy = 1)) +
   scale_x_continuous(expand = c(0,0), limits = c(0, 5.4))
